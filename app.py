@@ -8,9 +8,11 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import requests
+from psycopg import Error as PostgreSQLError
 from authlib.integrations.flask_client import OAuth
 from cryptography.fernet import Fernet
 from knowledge import register_knowledge
+from chat_store import ChatStore
 from flask import Flask, abort, g, jsonify, redirect, request, send_from_directory, session
 
 
@@ -128,6 +130,10 @@ def create_app(config=None):
     def api_error(error):
         return jsonify(error=error.description), error.code
 
+    @app.errorhandler(PostgreSQLError)
+    def postgres_error(_error):
+        return jsonify(error='Chat storage is temporarily unavailable. Check PostgreSQL and retry.'), 503
+
     def body():
         value = request.get_json(silent=True)
         if not isinstance(value, dict):
@@ -212,25 +218,66 @@ def create_app(config=None):
     @protected()
     def workspace():
         settings = db().execute('SELECT model FROM settings WHERE id=1').fetchone()
-        return jsonify(model=settings['model'], repositories=allowed_repos(), conversations=[dict(r) for r in db().execute(
-            'SELECT * FROM conversations WHERE user_id=? ORDER BY created_at DESC', (g.user['id'],))])
-
-    def owned_conversation(cid):
-        if not db().execute('SELECT id FROM conversations WHERE id=? AND user_id=?', (cid, g.user['id'])).fetchone():
-            abort(404)
+        chats, groups = chats_store.list(g.user['id'])
+        return jsonify(model=settings['model'], repositories=allowed_repos(), conversations=chats, groups=groups, chat_storage=chats_store.backend)
 
     @app.get('/api/conversations/<cid>')
     @protected()
     def conversation(cid):
-        owned_conversation(cid)
-        return jsonify([dict(r) for r in db().execute('SELECT * FROM messages WHERE conversation_id=? ORDER BY id', (cid,))])
+        return jsonify(chats_store.messages(g.user['id'], cid))
+
+    @app.patch('/api/conversations/<cid>')
+    @protected()
+    def update_conversation(cid):
+        data = body()
+        changes = {}
+        if 'title' in data:
+            changes['title'] = field(data, 'title', 200, True)
+        if 'pinned' in data:
+            if type(data['pinned']) is not bool:
+                abort(400, 'Pinned must be true or false.')
+            changes['pinned'] = int(data['pinned'])
+        if 'group_id' in data:
+            gid = data['group_id']
+            if gid is not None and (not isinstance(gid, str) or not gid or len(gid) > 100):
+                abort(400, 'Invalid chat group.')
+            changes['group_id'] = gid
+        if not changes:
+            abort(400, 'Provide a title, pin status, or group.')
+        chats_store.update_chat(g.user['id'], cid, changes)
+        return jsonify(ok=True)
 
     @app.delete('/api/conversations/<cid>')
     @protected()
     def delete_conversation(cid):
-        owned_conversation(cid)
-        db().execute('DELETE FROM conversations WHERE id=?', (cid,))
-        db().commit()
+        chats_store.delete_chat(g.user['id'], cid)
+        return jsonify(ok=True)
+
+    @app.post('/api/chat-groups')
+    @protected()
+    def create_chat_group():
+        return jsonify(id=chats_store.create_group(g.user['id'], field(body(), 'name', 100, True))), 201
+
+    @app.patch('/api/chat-groups/<gid>')
+    @protected()
+    def update_chat_group(gid):
+        data = body()
+        changes = {}
+        if 'name' in data:
+            changes['name'] = field(data, 'name', 100, True)
+        if 'collapsed' in data:
+            if type(data['collapsed']) is not bool:
+                abort(400, 'Collapsed must be true or false.')
+            changes['collapsed'] = int(data['collapsed'])
+        if not changes:
+            abort(400, 'Provide a name or collapse state.')
+        chats_store.update_group(g.user['id'], gid, changes)
+        return jsonify(ok=True)
+
+    @app.delete('/api/chat-groups/<gid>')
+    @protected()
+    def delete_chat_group(gid):
+        chats_store.delete_group(g.user['id'], gid)
         return jsonify(ok=True)
 
     @app.post('/api/chat')
@@ -242,10 +289,13 @@ def create_app(config=None):
         settings = db().execute('SELECT * FROM settings WHERE id=1').fetchone()
         if not settings['base_url'] or not settings['model']:
             abort(400, 'An administrator must configure a local model in Settings first.')
-        history = []
-        if cid:
-            owned_conversation(cid)
-            history = [dict(r) for r in db().execute('SELECT role,content FROM messages WHERE conversation_id=? ORDER BY id DESC LIMIT 20', (cid,))][::-1]
+        group_id = data.get('group_id')
+        if group_id is not None and (not isinstance(group_id, str) or not group_id or len(group_id) > 100):
+            abort(400, 'Invalid chat group.')
+        if group_id and not cid:
+            with chats_store.connection() as conn:
+                chats_store.owned_group(conn, g.user['id'], group_id)
+        history = [{k: row[k] for k in ('role', 'content')} for row in chats_store.messages(g.user['id'], cid, limit=20)] if cid else []
         repo_ids = [r['id'] for r in allowed_repos()]
         selected = data.get('repository_id')
         if selected is not None:
@@ -269,12 +319,7 @@ def create_app(config=None):
                 raise ValueError('Empty response')
         except (requests.RequestException, ValueError, KeyError, IndexError, TypeError):
             return jsonify(error='The local model could not complete the request. Check its endpoint, model name, and credentials.'), 502
-        if not cid:
-            cid = secrets.token_urlsafe(18)
-            db().execute('INSERT INTO conversations(id,user_id,title) VALUES(?,?,?)', (cid, g.user['id'], prompt[:70]))
-        db().execute('INSERT INTO messages(conversation_id,role,content) VALUES(?,?,?)', (cid, 'user', prompt))
-        db().execute('INSERT INTO messages(conversation_id,role,content,sources) VALUES(?,?,?,?)', (cid, 'assistant', answer, json.dumps(sources)))
-        db().commit()
+        cid = chats_store.append_turn(g.user['id'], cid, prompt, answer, sources, group_id)
         return jsonify(conversation_id=cid, content=answer, sources=sources)
 
     @app.get('/api/admin')
@@ -366,6 +411,17 @@ def create_app(config=None):
         return jsonify(ok=True)
 
     knowledge = register_knowledge(app, db, cipher, protected, allowed_repos, body, field, audit)
+    vector_url = app.config.get('VECTOR_DATABASE_URL', os.environ.get('VECTOR_DATABASE_URL', ''))
+    chat_url = app.config.get('CHAT_DATABASE_URL', os.environ.get('CHAT_DATABASE_URL', vector_url))
+    with app.app_context():
+        namespace = db().execute('SELECT vector_namespace FROM settings WHERE id=1').fetchone()[0]
+        try:
+            chats_store = ChatStore(db, namespace, chat_url)
+        except Exception as error:
+            if chat_url:
+                raise RuntimeError('Could not initialize PostgreSQL chat storage. Check CHAT_DATABASE_URL or VECTOR_DATABASE_URL and database permissions.') from None
+            raise
+    app.extensions['chat_store'] = chats_store
     return app
 
 

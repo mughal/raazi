@@ -1,6 +1,6 @@
 # Raazi
 
-A compact, self-hosted enterprise AI workspace. Flask + SQLite + a dependency-free browser interface. Git starts on `dev`.
+A compact, self-hosted enterprise AI workspace. Flask, SQLite for workspace metadata, optional PostgreSQL for history/vectors, and a dependency-free browser interface. Git starts on `dev`.
 
 ## Run locally (PowerShell)
 
@@ -16,7 +16,9 @@ In **Admin console → Models & settings**, enter your server's API base URL (fo
 
 ## What works
 
-- Private, persisted conversations with per-user access checks and deletion.
+- Private, persisted conversations with groups, pinning, renaming, search, recency ordering, and per-user access checks.
+- A compact navigation rail and expandable history sidebar, with mobile history drawer.
+- PostgreSQL chat/message/group storage in the same container as pgvector, with a one-time import of existing SQLite history.
 - Administrator-configured OpenAI-compatible chat and embedding endpoints, separate encrypted credentials, and system instructions.
 - Enterprise sign-in using OIDC authorization code flow with PKCE through AD FS or Entra ID.
 - First-login account provisioning; administrator role derived from an exact configured group claim.
@@ -44,6 +46,16 @@ Run `.venv/Scripts/python app.py` behind a TLS reverse proxy on the same host. T
 
 Direct LDAP credential binding and IIS integrated Windows authentication are not implemented. The current default is AD-backed OIDC; confirm your environment before production integration.
 
+## Chat history and groups
+
+The left sidebar has **Pinned**, expandable **Groups**, and ungrouped history organized by recency. Search filters titles within pinned chats, groups, and history. Use the plus button beside Groups to create a folder; a chat's ellipsis menu lets you rename it, pin it, or move it to a group. Group options offer rename, **New chat in group**, and delete. Deleting a group moves its chats back to History and preserves their messages. Groups organize only your own chats; they do not grant access to knowledge repositories or other users' conversations. Folder collapse state is saved in the active database. Group ordering currently follows creation order; drag-and-drop is not implemented.
+
+When `VECTOR_DATABASE_URL` is set, chat storage automatically uses the same PostgreSQL database. Set `CHAT_DATABASE_URL` explicitly only if you need a different connection; setting it to an empty string forces local history for development. PostgreSQL preparation creates ordinary tables prefixed `raazi_chat_` alongside the pgvector tables. No extension is needed for chat rows.
+
+On the first PostgreSQL startup for a workspace, existing SQLite groups, conversations, messages, and source snapshots are imported in a single transaction. A persistent import marker prevents duplicates and prevents later restarts from resurrecting deleted chats. The original SQLite records remain as a backup snapshot and are no longer updated once PostgreSQL history is active. Stop the previous app process and back up SQLite before switching. Do not switch back to SQLite as an outage fallback: it contains the old snapshot, not newer PostgreSQL history. Further SQLite changes made after the one-time import are not imported automatically. Keep `DATABASE` and its persistent workspace namespace stable across restarts, and back up both databases.
+
+A configured PostgreSQL outage returns a storage-unavailable error; Raazi never silently writes new chats to SQLite. PostgreSQL startup fails with a clear configuration error if its chat tables cannot be prepared. The PostgreSQL account needs privileges to create the chat tables, indexes, and sequences, or these must be provisioned by a DBA.
+
 ## Knowledge workspace workflow
 
 1. In **Admin console → Models & settings**, configure your chat model.
@@ -62,7 +74,7 @@ Existing databases are migrated additively on startup. Old text documents become
 
 **A PostgreSQL container with pgvector is sufficient for vector search; no separate vector-database product is required.** Plain PostgreSQL does not include pgvector automatically. `compose.yaml` uses the versioned `pgvector/pgvector:0.8.6-pg17` image, a persistent volume, health checks, and a localhost-only port.
 
-This upgrade uses PostgreSQL for the **vector index only**. Users, chat history, document binaries, repository ACLs, and source metadata remain in SQLite. It does not migrate the entire app database to PostgreSQL. SQLite remains the authorization authority, and every PostgreSQL result is checked against current ready/authorized passages before it reaches the model. No document text or filenames are copied to the vector table.
+When configured, PostgreSQL stores the **vector index and private chat history, messages, groups, pin states, and folder collapse states**. Users, document binaries, repository ACLs, model settings, and source metadata remain in SQLite. SQLite authenticates users and authorizes knowledge access; every PostgreSQL vector result is checked against current ready/authorized passages before it reaches the model. Chat tables separately enforce workspace namespaces and user ownership. Knowledge text is not copied into vector tables; generated answers and source excerpt snapshots are stored in chat message rows.
 
 To enable PostgreSQL, start Docker Desktop and use PowerShell:
 
@@ -76,7 +88,7 @@ docker compose ps
 ./start-dev.ps1
 ```
 
-`.env` is read by Docker Compose, not automatically by the Flask app. The application needs `VECTOR_DATABASE_URL` in its own process environment. Do not put a real password in Git. The PostgreSQL role must be able to create the vector extension, tables and indexes; for hardened deployment, have a DBA pre-provision these and constrain privileges.
+`.env` is read by Docker Compose, not automatically by the Flask app. The application needs `VECTOR_DATABASE_URL` in its own process environment. Chat storage defaults to that same connection. You may set `CHAT_DATABASE_URL` to override the history connection separately. Do not put a real password in Git. The PostgreSQL role must be able to create the vector extension, tables and indexes; for hardened deployment, have a DBA pre-provision these and constrain privileges.
 
 On the first embedding-settings save, Raazi prepares a dimension-specific vector table and cosine HNSW index. Each SQLite database has a persistent namespace to isolate its vectors. Queries filter namespace, model fingerprint and allowed repository IDs; pgvector iterative scanning helps filtered approximate search. HNSW is approximate: measure recall/latency on your own data before tuning. Changing dimensions creates a separate table. Unused empty dimension tables can be retained or removed by a DBA.
 
@@ -90,7 +102,7 @@ Enterprise profile context is currently supplied by identity claims plus admin-m
 
 This is an MVP foundation, not Open WebUI feature parity. Streaming, multiple chat-model routing, OCR, legacy .doc parsing, repository editing, password/LDAP login, quotas, enterprise audit export, a full PostgreSQL metadata migration, and durable job queues are not included. Chat renders model output as plain text to prevent HTML injection.
 
-SQLite keeps users, conversations, documents, and audit entries in the configured database. Back up that file consistently and preserve `ENCRYPTION_KEY` separately; losing the key makes saved model credentials unreadable. Protect the data directory with OS permissions and disk encryption: only model API credentials are encrypted at the application layer. Development generates an ignored `data/encryption.key` automatically. Production requires explicit secrets.
+SQLite keeps users, settings, documents, repository permissions, and audit entries in the configured database. In local mode it also keeps chat history; when configured, PostgreSQL keeps active chat history and groups. Back up that file consistently and preserve `ENCRYPTION_KEY` separately; losing the key makes saved model credentials unreadable. Protect the data directory with OS permissions and disk encryption: only model API credentials are encrypted at the application layer. Development generates an ignored `data/encryption.key` automatically. Production requires explicit secrets.
 
 Only trusted administrators should configure model URLs: internal network endpoints are intentionally allowed for local inference. Restrict backend egress to approved inference hosts in deployment. Put rate limiting and request concurrency controls at your reverse proxy. Model requests are synchronous with a 120-second read timeout. Review context budgets for your selected model. No hosted deployment or remote Git repository is created.
 
@@ -103,9 +115,9 @@ node --check static/app.js
 
 Tests use temporary SQLite databases and mocked inference responses. They cover authentication/CSRF, admin permissions, conversation isolation, encrypted credentials, real PDF/DOCX extraction, semantic ranking, page citations, source permissions, vector validation, retry/reindex, legacy migration, and PostgreSQL query scoping.
 
-Optional live pgvector integration test (use an isolated test database with pgvector): set `TEST_VECTOR_DATABASE_URL` and run `.venv/Scripts/python -m pytest tests/test_pgvector_integration.py -q`. Without that variable it is explicitly skipped.
+Optional live PostgreSQL integration tests (use an isolated test database with pgvector): set `TEST_VECTOR_DATABASE_URL` and run `.venv/Scripts/python -m pytest tests/test_pgvector_integration.py tests/test_chat_postgres_integration.py -q`. Without that variable they are explicitly skipped. The history test checks transactional import, grouping, ownership, namespace isolation, persistence, and deleted-chat import behavior.
 
-Optional browser workflow test: install `requirements-dev.txt`, then run `.venv/Scripts/python tests/browser_smoke.py`. It uses a temporary database, a mocked model endpoint, and installed Microsoft Edge in headless mode; screenshots go to ignored `data/browser-smoke/`. It does not change your real workspace data.
+Optional browser workflow test: install `requirements-dev.txt`, then run `.venv/Scripts/python tests/browser_smoke.py`. It uses a temporary database, a mocked model endpoint, and installed Microsoft Edge in headless mode. It verifies knowledge ingestion/citations plus chat creation, grouping, pinning, search, reload persistence, and the mobile sidebar; screenshots go to ignored `data/browser-smoke/`. It does not change your real workspace data.
 
 Validate live enterprise sign-in and your actual chat/embedding model before rollout.
 
