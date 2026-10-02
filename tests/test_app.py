@@ -12,7 +12,7 @@ from app import create_app
 def setup(tmp_path, monkeypatch):
     monkeypatch.delenv('ENCRYPTION_KEY', raising=False)
     app = create_app({'TESTING': True, 'SECRET_KEY': 'test-session-secret', 'DATABASE': str(tmp_path / 'test.db'),
-                      'AUTH_MODE': 'development', 'SESSION_COOKIE_SECURE': False})
+                      'AUTH_MODE': 'development', 'SESSION_COOKIE_SECURE': False, 'VECTOR_DATABASE_URL': ''})
     client = app.test_client()
     csrf = client.get('/api/session').json['csrf']
     client.post('/auth/development', json={}, headers={'X-CSRF-Token': csrf})
