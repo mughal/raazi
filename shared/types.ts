@@ -51,6 +51,7 @@ export interface Repository {
 }
 export interface Workspace {
   model: string;
+  demo_mode: boolean;
   conversations: Chat[];
   groups: Group[];
   repositories: Repository[];

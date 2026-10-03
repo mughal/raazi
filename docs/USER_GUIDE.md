@@ -8,6 +8,10 @@
 4. Type your question.
 5. Select **Send message**.
 
+The composer stays visible at the bottom. Scroll the area above it to read earlier messages.
+
+In local development, **Demo mode** is available when no model is configured. Send a question to see a long sample reply. Demo text is not an answer and does not use your documents. Chats still save to your history. Configure a model to get real answers. Production requires a configured model.
+
 Raazi uses the local model that your admin configured. It sends your question, recent chat context, profile context, and selected source passages to that model.
 
 ## Read and reuse answers

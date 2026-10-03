@@ -881,3 +881,33 @@ it("keeps composer shades private and independent from accent colors", async () 
       .body.user.composer_shade,
   ).toBe("mist");
 });
+
+it("saves labeled demo replies without calling a model, and stops demo mode after configuration", async () => {
+  const calls = vi.fn(mockRequest);
+  handler = calls;
+  expect((await admin.get("/api/workspace")).body.demo_mode).toBe(true);
+  const reply = await mutate("post", "/api/chat", {
+    message: "Test scrolling",
+    conversation_id: "",
+  });
+  expect(reply.status).toBe(200);
+  expect(reply.body.content).toContain("## Demo response");
+  expect(reply.body.content).toContain("No model was called");
+  expect(reply.body.content.length).toBeGreaterThan(4000);
+  expect(reply.body.sources).toEqual([]);
+  expect(calls).not.toHaveBeenCalled();
+  const id = reply.body.conversation_id;
+  const saved = await admin.get("/api/conversations/" + id);
+  expect(saved.body).toHaveLength(2);
+  expect(saved.body[1].content).toBe(reply.body.content);
+  expect((await userGet("/api/conversations/" + id)).status).toBe(404);
+  await configure();
+  expect((await admin.get("/api/workspace")).body.demo_mode).toBe(false);
+  const real = await mutate("post", "/api/chat", {
+    message: "Hello",
+    conversation_id: id,
+  });
+  expect(real.status).toBe(200);
+  expect(real.body.content).not.toContain("## Demo response");
+  expect(calls).toHaveBeenCalledOnce();
+});

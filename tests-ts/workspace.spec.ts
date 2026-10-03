@@ -1,5 +1,75 @@
 import { test, expect } from "@playwright/test";
 import { policyPDF, policyDOCX } from "./fixtures";
+test("composer stays in view on landing and while long demo chats scroll", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await expect(page.locator(".demo-notice")).toContainText("sample text only");
+  const inView = async () => {
+    const box = await page.locator(".composer").boundingBox();
+    expect(box).not.toBeNull();
+    expect(box!.y).toBeGreaterThanOrEqual(0);
+    expect(box!.y + box!.height).toBeLessThanOrEqual(
+      page.viewportSize()!.height,
+    );
+    expect(await page.evaluate(() => window.scrollY)).toBe(0);
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  };
+  for (const viewport of [
+    { width: 1280, height: 720 },
+    { width: 390, height: 660 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await inView();
+  }
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.getByLabel("Message Raazi").fill("Demo scrolling test");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toContainText(
+    "End of demo response",
+  );
+  const scroller = page.getByRole("region", { name: "Chat messages" });
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollHeight > el.clientHeight))
+    .toBe(true);
+  await expect
+    .poll(() => scroller.evaluate((el) => el.scrollTop))
+    .toBeGreaterThan(100);
+  const dock = (await page.locator(".composer").boundingBox())!;
+  await scroller.hover();
+  await page.mouse.wheel(0, -10000);
+  await expect
+    .poll(() => scroller.evaluate((el) => Math.round(el.scrollTop)))
+    .toBe(0);
+  await inView();
+  expect((await page.locator(".composer").boundingBox())!.y).toBeCloseTo(
+    dock.y,
+    0,
+  );
+  await page.screenshot({ path: "data/react-fixed-composer.png" });
+  await page.setViewportSize({ width: 390, height: 660 });
+  await inView();
+  await page.getByLabel("Message Raazi").fill("Second demo message");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(2);
+  await inView();
+  await page.screenshot({ path: "data/react-fixed-composer-mobile.png" });
+  await page.reload();
+  await page.getByRole("button", { name: "Open sidebar", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Demo scrolling test", exact: true })
+    .click();
+  await expect(page.locator(".message.assistant")).toHaveCount(2);
+  await inView();
+});
+
 test("React workspace: settings, real uploads, citations, folders, persisted chat and draft", async ({
   page,
   context,

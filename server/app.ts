@@ -1,3 +1,4 @@
+import { demoAnswer } from "./demo.js";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import multer from "multer";
@@ -424,6 +425,9 @@ export async function createApp(config: Config) {
   app.get("/api/workspace", protect(), async (_req, res) =>
     res.json({
       model: knowledge.settings().model,
+      demo_mode:
+        config.mode === "development" &&
+        (!knowledge.settings().base_url || !knowledge.settings().model),
       uploads_enabled: storage.enabled(),
       supports_images: !!knowledge.settings().supports_images,
       repositories: allowed(res.locals.user),
@@ -508,7 +512,8 @@ export async function createApp(config: Config) {
       ),
       s = knowledge.settings(),
       user = res.locals.user;
-    if (!s.base_url || !s.model)
+    const demo = !s.base_url || !s.model;
+    if (demo && config.mode !== "development")
       throw new Failure(400, "Ask an admin to configure a local model.");
     if (data.group_id && !data.conversation_id)
       await history.owned(user.id, data.group_id, true);
@@ -561,6 +566,29 @@ export async function createApp(config: Config) {
       if (!repos.includes(data.repository_id))
         throw new Failure(403, "Repository access denied.");
       repos = [data.repository_id];
+    }
+    if (demo) {
+      const answer = demoAnswer;
+      if (!current(res))
+        throw new Failure(401, "Your account or session is not active.");
+      const files = selectedFiles.map((f) => attachments.public(f));
+      const conversation_id = await history.append(
+        user.id,
+        data.conversation_id || undefined,
+        data.message,
+        answer,
+        [],
+        data.group_id ?? null,
+        files,
+        revision,
+      );
+      res.json({
+        conversation_id,
+        content: answer,
+        sources: [],
+        attachments: files,
+      });
+      return;
     }
     const privateIds = activeFiles
       .filter((f) => f.kind === "document")

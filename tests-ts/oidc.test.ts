@@ -100,6 +100,13 @@ it("verifies the OIDC code flow, PKCE, signed claims, nonce, exact groups and di
       job_title: "Analyst",
     });
     expect((await agent.get("/api/admin")).status).toBe(200);
+    expect((await agent.get("/api/workspace")).body.demo_mode).toBe(false);
+    const noModel = await agent
+      .post("/api/chat")
+      .set("X-CSRF-Token", session.csrf)
+      .send({ message: "Hello", conversation_id: "" });
+    expect(noModel.status).toBe(400);
+    expect(noModel.body.error).toContain("configure a local model");
     wrongNonce = true;
     expect((await login()).response.status).toBe(403);
     wrongNonce = false;

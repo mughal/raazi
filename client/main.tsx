@@ -86,7 +86,8 @@ function App() {
     [mobile, setMobile] = useState(false),
     [editor, setEditor] = useState<Editor | null>(null),
     [dialogError, setDialogError] = useState("");
-  const end = useRef<HTMLDivElement>(null),
+  const chatScroll = useRef<HTMLDivElement>(null),
+    end = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
     loadSequence = useRef(0),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
@@ -123,8 +124,13 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }, [messages, busy]);
+    const panel = chatScroll.current;
+    if (panel)
+      panel.scrollTo({
+        top: messages.length ? panel.scrollHeight : 0,
+        behavior: "smooth",
+      });
+  }, [messages, busy, view]);
   async function perform(
     fn: () => Promise<void>,
     label = "Raazi is thinking…",
@@ -385,7 +391,7 @@ function App() {
           })
         }
       />
-      <main className="main">
+      <main className={"main" + (view === "chat" ? " main-chat" : "")}>
         <header className="topbar">
           <div className="topbar-title">
             <button
@@ -418,7 +424,9 @@ function App() {
           </div>
           <span className="badge">
             <span className="dot">●</span>
-            {workspace.model || "Configure a local model"}
+            {workspace.demo_mode
+              ? "Demo mode"
+              : workspace.model || "Configure a local model"}
           </span>
         </header>
         {error && (
@@ -431,202 +439,227 @@ function App() {
         )}
         {view === "chat" && (
           <div className="chat-wrap">
-            {!messages.length ? (
-              <section className="welcome">
-                <div className="spark">◈</div>
-                <div className="eyebrow">CONNECTED TO YOUR WORK</div>
-                <h1>How can I help, {session.user.name.split(" ")[0]}?</h1>
-                <p className="subtitle">
-                  A thoughtful space for your questions, ideas, and enterprise
-                  knowledge. Powered by your organization's local models.
-                </p>
-                <div className="suggestions">
-                  {[
-                    {
-                      icon: "book",
-                      title: "Explore your knowledge",
-                      text: "Find answers across your documents",
-                      prompt: "What can you tell me about our policies?",
-                    },
-                    {
-                      icon: "edit",
-                      title: "Make work clearer",
-                      text: "Summarize, draft, and refine",
-                      prompt: "Help me draft a clear project update.",
-                    },
-                    {
-                      icon: "chat",
-                      title: "Think it through",
-                      text: "Turn your next idea into a plan",
-                      prompt: "Help me plan my next project.",
-                    },
-                  ].map((s) => (
-                    <button
-                      key={s.title}
-                      className="suggestion"
-                      onClick={() => setDraft(s.prompt)}
-                    >
-                      <span className="icon">
-                        <Icon name={s.icon} />
-                      </span>
-                      <strong>{s.title}</strong>
-                      <small>{s.text}</small>
-                    </button>
+            <div
+              className="chat-scroll"
+              ref={chatScroll}
+              role="region"
+              aria-label="Chat messages"
+              tabIndex={0}
+            >
+              {!messages.length ? (
+                <section className="welcome">
+                  <div className="spark">◈</div>
+                  <div className="eyebrow">CONNECTED TO YOUR WORK</div>
+                  <h1>How can I help, {session.user.name.split(" ")[0]}?</h1>
+                  <p className="subtitle">
+                    A thoughtful space for your questions, ideas, and enterprise
+                    knowledge. Powered by your organization's local models.
+                  </p>
+                  <div className="suggestions">
+                    {[
+                      {
+                        icon: "book",
+                        title: "Explore your knowledge",
+                        text: "Find answers across your documents",
+                        prompt: "What can you tell me about our policies?",
+                      },
+                      {
+                        icon: "edit",
+                        title: "Make work clearer",
+                        text: "Summarize, draft, and refine",
+                        prompt: "Help me draft a clear project update.",
+                      },
+                      {
+                        icon: "chat",
+                        title: "Think it through",
+                        text: "Turn your next idea into a plan",
+                        prompt: "Help me plan my next project.",
+                      },
+                    ].map((s) => (
+                      <button
+                        key={s.title}
+                        className="suggestion"
+                        onClick={() => setDraft(s.prompt)}
+                      >
+                        <span className="icon">
+                          <Icon name={s.icon} />
+                        </span>
+                        <strong>{s.title}</strong>
+                        <small>{s.text}</small>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : (
+                <div className="messages">
+                  {current && (
+                    <div className="chat-actions">
+                      <button
+                        className="text-button"
+                        onClick={() => editChat(current)}
+                      >
+                        <Icon name="more" />
+                        Manage conversation
+                      </button>
+                    </div>
+                  )}
+                  {messages.map((m, n) => (
+                    <MessageView
+                      key={m.id ?? n}
+                      message={m}
+                      busy={busy}
+                      onResend={resendQuestion}
+                    />
                   ))}
+                  {busy && (
+                    <p className="help" role="status">
+                      {busyText}
+                    </p>
+                  )}
+                  <div ref={end} />
                 </div>
-              </section>
-            ) : (
-              <div className="messages">
-                {current && (
-                  <div className="chat-actions">
+              )}
+            </div>
+            <div className="composer-dock">
+              {workspace.demo_mode && (
+                <p className="demo-notice">
+                  Demo mode: sample text only. Configure a model for real
+                  answers.
+                </p>
+              )}
+              <form className="composer" onSubmit={send}>
+                <AttachmentChips
+                  files={files}
+                  busy={busy}
+                  onRemove={(id) =>
+                    setDraftFiles((d) => ({
+                      ...d,
+                      [draftKey]: files.filter((f) => f.id !== id),
+                    }))
+                  }
+                  onRetry={(f) => void retryFile(f)}
+                />
+                <input
+                  ref={fileInput}
+                  type="file"
+                  hidden
+                  aria-label="Choose chat files"
+                  multiple
+                  accept={
+                    workspace.supports_images
+                      ? ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
+                      : ".pdf,.docx,.txt,.md"
+                  }
+                  onChange={(e) => {
+                    void uploadFiles(e.target.files);
+                    e.target.value = "";
+                  }}
+                />
+                <textarea
+                  aria-label="Message Raazi"
+                  placeholder="Ask Raazi anything about your work…"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  maxLength={16000}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.shiftKey &&
+                      !e.nativeEvent.isComposing
+                    ) {
+                      e.preventDefault();
+                      e.currentTarget.form?.requestSubmit();
+                    }
+                  }}
+                />
+                <div className="composer-footer">
+                  <div className="composer-controls">
                     <button
-                      className="text-button"
-                      onClick={() => editChat(current)}
+                      type="button"
+                      className="upload-button"
+                      aria-label="Upload files"
+                      title="Upload a document or image"
+                      aria-describedby="upload-help"
+                      disabled={
+                        busy || !workspace.uploads_enabled || files.length >= 5
+                      }
+                      onClick={() => fileInput.current?.click()}
                     >
-                      <Icon name="more" />
-                      Manage conversation
+                      <Icon name="plus" />
+                    </button>
+                    <select
+                      aria-label="Knowledge repository"
+                      value={repository}
+                      onChange={(e) => setRepository(e.target.value)}
+                    >
+                      <option value="">All available knowledge</option>
+                      {workspace.repositories.map((r) => (
+                        <option key={r.id} value={r.id}>
+                          {r.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="composer-right">
+                    <details className="model-details">
+                      <summary aria-label="Selected model">
+                        <span>
+                          {workspace.demo_mode
+                            ? "Demo mode"
+                            : workspace.model || "Select a model"}
+                        </span>
+                        <Icon name="chevron" />
+                      </summary>
+                      <div className="model-menu">
+                        <strong>
+                          {workspace.model || "No model configured"}
+                        </strong>
+                        <p>
+                          {workspace.demo_mode
+                            ? "No model is configured. Demo replies test the chat layout and do not answer your question."
+                            : "The administrator selects the model for this workspace."}
+                        </p>
+                        {session.user.role === "admin" && (
+                          <button
+                            type="button"
+                            onClick={() => openView("admin")}
+                          >
+                            Configure model
+                          </button>
+                        )}
+                      </div>
+                    </details>
+                    <button
+                      className="primary send"
+                      aria-label="Send message"
+                      disabled={
+                        busy ||
+                        !draft.trim() ||
+                        files.some((f) => f.status !== "ready")
+                      }
+                    >
+                      {busy ? (
+                        <span className="send-spinner" aria-hidden="true" />
+                      ) : (
+                        <Icon name="arrow" />
+                      )}
                     </button>
                   </div>
-                )}
-                {messages.map((m, n) => (
-                  <MessageView
-                    key={m.id ?? n}
-                    message={m}
-                    busy={busy}
-                    onResend={resendQuestion}
-                  />
-                ))}
-                {busy && (
-                  <p className="help" role="status">
-                    {busyText}
-                  </p>
-                )}
-                <div ref={end} />
-              </div>
-            )}
-            <form className="composer" onSubmit={send}>
-              <AttachmentChips
-                files={files}
-                busy={busy}
-                onRemove={(id) =>
-                  setDraftFiles((d) => ({
-                    ...d,
-                    [draftKey]: files.filter((f) => f.id !== id),
-                  }))
-                }
-                onRetry={(f) => void retryFile(f)}
-              />
-              <input
-                ref={fileInput}
-                type="file"
-                hidden
-                aria-label="Choose chat files"
-                multiple
-                accept={
-                  workspace.supports_images
-                    ? ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
-                    : ".pdf,.docx,.txt,.md"
-                }
-                onChange={(e) => {
-                  void uploadFiles(e.target.files);
-                  e.target.value = "";
-                }}
-              />
-              <textarea
-                aria-label="Message Raazi"
-                placeholder="Ask Raazi anything about your work…"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                maxLength={16000}
-                onKeyDown={(e) => {
-                  if (
-                    e.key === "Enter" &&
-                    !e.shiftKey &&
-                    !e.nativeEvent.isComposing
-                  ) {
-                    e.preventDefault();
-                    e.currentTarget.form?.requestSubmit();
-                  }
-                }}
-              />
-              <div className="composer-footer">
-                <div className="composer-controls">
-                  <button
-                    type="button"
-                    className="upload-button"
-                    aria-label="Upload files"
-                    title="Upload a document or image"
-                    aria-describedby="upload-help"
-                    disabled={
-                      busy || !workspace.uploads_enabled || files.length >= 5
-                    }
-                    onClick={() => fileInput.current?.click()}
-                  >
-                    <Icon name="plus" />
-                  </button>
-                  <select
-                    aria-label="Knowledge repository"
-                    value={repository}
-                    onChange={(e) => setRepository(e.target.value)}
-                  >
-                    <option value="">All available knowledge</option>
-                    {workspace.repositories.map((r) => (
-                      <option key={r.id} value={r.id}>
-                        {r.name}
-                      </option>
-                    ))}
-                  </select>
                 </div>
-                <div className="composer-right">
-                  <details className="model-details">
-                    <summary aria-label="Selected model">
-                      <span>{workspace.model || "Select a model"}</span>
-                      <Icon name="chevron" />
-                    </summary>
-                    <div className="model-menu">
-                      <strong>
-                        {workspace.model || "No model configured"}
-                      </strong>
-                      <p>
-                        The administrator selects the model for this workspace.
-                      </p>
-                      {session.user.role === "admin" && (
-                        <button type="button" onClick={() => openView("admin")}>
-                          Configure model
-                        </button>
-                      )}
-                    </div>
-                  </details>
-                  <button
-                    className="primary send"
-                    aria-label="Send message"
-                    disabled={
-                      busy ||
-                      !draft.trim() ||
-                      files.some((f) => f.status !== "ready")
-                    }
-                  >
-                    {busy ? (
-                      <span className="send-spinner" aria-hidden="true" />
-                    ) : (
-                      <Icon name="arrow" />
-                    )}
-                  </button>
-                </div>
-              </div>
-              <p id="upload-help" className="upload-help">
-                {workspace.uploads_enabled
-                  ? "Files stay private. Documents: 20 MB." +
-                    (workspace.supports_images
-                      ? " Images: 10 MB."
-                      : " Image input is off.")
-                  : "Uploads are off. Ask an admin to configure S3 storage."}
+                <p id="upload-help" className="upload-help">
+                  {workspace.uploads_enabled
+                    ? "Files stay private. Documents: 20 MB." +
+                      (workspace.supports_images
+                        ? " Images: 10 MB."
+                        : " Image input is off.")
+                    : "Uploads are off. Ask an admin to configure S3 storage."}
+                </p>
+              </form>
+              <p className="footnote">
+                AI can provide incorrect information. Check important answers
+                and their sources.
               </p>
-            </form>
-            <p className="footnote">
-              AI can provide incorrect information. Check important answers and
-              their sources.
-            </p>
+            </div>
           </div>
         )}
         {view === "admin" && session.user.role === "admin" && (
