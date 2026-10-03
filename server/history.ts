@@ -81,6 +81,9 @@ export class History {
       await client!.query(
         `CREATE TABLE IF NOT EXISTS raazi_chat_groups(namespace TEXT NOT NULL,id TEXT NOT NULL,user_id TEXT NOT NULL,name TEXT NOT NULL,collapsed INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,PRIMARY KEY(namespace,id),UNIQUE(namespace,user_id,id));CREATE TABLE IF NOT EXISTS raazi_chat_conversations(namespace TEXT NOT NULL,id TEXT NOT NULL,user_id TEXT NOT NULL,title TEXT NOT NULL,group_id TEXT,pinned INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(namespace,id),FOREIGN KEY(namespace,user_id,group_id) REFERENCES raazi_chat_groups(namespace,user_id,id));CREATE TABLE IF NOT EXISTS raazi_chat_messages(id BIGSERIAL PRIMARY KEY,namespace TEXT NOT NULL,conversation_id TEXT NOT NULL,role TEXT NOT NULL,content TEXT NOT NULL,sources TEXT NOT NULL DEFAULT '[]',FOREIGN KEY(namespace,conversation_id) REFERENCES raazi_chat_conversations(namespace,id) ON DELETE CASCADE);CREATE INDEX IF NOT EXISTS raazi_chat_owner_updated ON raazi_chat_conversations(namespace,user_id,updated_at);CREATE INDEX IF NOT EXISTS raazi_chat_message_order ON raazi_chat_messages(namespace,conversation_id,id);CREATE TABLE IF NOT EXISTS raazi_chat_imports(namespace TEXT PRIMARY KEY,imported_at TEXT NOT NULL);`,
       );
+      await client!.query(
+        "ALTER TABLE raazi_chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT NOT NULL DEFAULT '[]'",
+      );
       if (
         (
           await this.query(
@@ -115,13 +118,14 @@ export class History {
       }
       for (const row of this.db.all("SELECT * FROM messages ORDER BY id"))
         await this.query(
-          "INSERT INTO raazi_chat_messages(namespace,conversation_id,role,content,sources) VALUES(?,?,?,?,?)",
+          "INSERT INTO raazi_chat_messages(namespace,conversation_id,role,content,sources,attachments) VALUES(?,?,?,?,?,?)",
           [
             this.namespace,
             row.conversation_id,
             row.role,
             row.content,
             row.sources,
+            row.attachments ?? "[]",
           ],
           client,
         );
@@ -232,6 +236,7 @@ export class History {
     answer: string,
     sources: unknown[],
     group: string | null,
+    attachments: unknown[] = [],
   ) {
     return this.tx(async (c) => {
       const now = new Date().toISOString();
@@ -262,8 +267,20 @@ export class History {
         ["user", prompt, "[]"],
         ["assistant", answer, JSON.stringify(sources)],
       ]) {
-        const keys = ["conversation_id", "role", "content", "sources"],
-          values: any[] = [id, role, content, refs];
+        const keys = [
+            "conversation_id",
+            "role",
+            "content",
+            "sources",
+            "attachments",
+          ],
+          values: any[] = [
+            id,
+            role,
+            content,
+            refs,
+            role === "user" ? JSON.stringify(attachments) : "[]",
+          ];
         if (this.pool) {
           keys.unshift("namespace");
           values.unshift(this.namespace);

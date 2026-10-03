@@ -90,6 +90,9 @@ export class LocalDB {
     this.raw.exec(readFileSync(resolve("server/schema.sql"), "utf8"));
     const additions: Record<string, Record<string, string>> = {
       settings: {
+        supports_images: "INTEGER NOT NULL DEFAULT 0",
+        storage_enabled: "INTEGER NOT NULL DEFAULT 0",
+        storage_store_id: "TEXT",
         embedding_url: "TEXT NOT NULL DEFAULT ''",
         embedding_model: "TEXT NOT NULL DEFAULT ''",
         embedding_key: "TEXT NOT NULL DEFAULT ''",
@@ -97,6 +100,7 @@ export class LocalDB {
         vector_namespace: "TEXT NOT NULL DEFAULT ''",
       },
       documents: {
+        object_ref: "TEXT",
         filename: "TEXT NOT NULL DEFAULT ''",
         mime: "TEXT NOT NULL DEFAULT 'text/plain'",
         original: "BLOB",
@@ -107,6 +111,7 @@ export class LocalDB {
         indexed_signature: "TEXT NOT NULL DEFAULT 'keyword'",
         index_backend: "TEXT NOT NULL DEFAULT 'local'",
       },
+      messages: { attachments: "TEXT NOT NULL DEFAULT '[]'" },
       conversations: {
         group_id: "TEXT REFERENCES chat_groups(id) ON DELETE SET NULL",
         pinned: "INTEGER NOT NULL DEFAULT 0",
@@ -134,6 +139,7 @@ export class LocalDB {
     this.raw.exec(
       `CREATE TABLE IF NOT EXISTS passages(id TEXT PRIMARY KEY,doc_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,repo_id INTEGER NOT NULL REFERENCES repositories(id) ON DELETE CASCADE,content TEXT NOT NULL,page INTEGER,label TEXT NOT NULL,vector TEXT);CREATE INDEX IF NOT EXISTS passages_doc ON passages(doc_id);CREATE INDEX IF NOT EXISTS passages_repo ON passages(repo_id);CREATE VIRTUAL TABLE IF NOT EXISTS passages_fts USING fts5(content,passage_id UNINDEXED);CREATE TRIGGER IF NOT EXISTS passages_delete AFTER DELETE ON passages BEGIN DELETE FROM passages_fts WHERE passage_id=old.id; END;`,
     );
+    this.raw.exec(readFileSync(resolve("server/uploads-schema.sql"), "utf8"));
     for (const doc of this.all(
       "SELECT * FROM documents WHERE units='[]' AND content<>''",
     )) {

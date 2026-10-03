@@ -13,10 +13,11 @@
     "test": "vitest run",
     "test:browser": "npm run build && playwright test",
     "backup": "tsx server/backup.ts",
-    "format": "prettier --write client server shared tests-ts *.ts *.json README.md",
-    "format:check": "prettier --check client server shared tests-ts *.ts *.json README.md"
+    "format": "prettier --write client server shared tests-ts *.ts *.json README.md docs",
+    "format:check": "prettier --check client server shared tests-ts *.ts *.json README.md docs"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
     "@xmldom/xmldom": "^0.8.11",
     "better-sqlite3": "^12.4.1",
     "cookie-parser": "^1.4.7",
@@ -28,6 +29,7 @@
     "pg": "^8.16.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
+    "sharp": "^0.35.5",
     "zod": "^4.1.5"
   },
   "devDependencies": {

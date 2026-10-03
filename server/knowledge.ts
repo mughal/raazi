@@ -5,6 +5,7 @@ import { DOMParser } from "@xmldom/xmldom";
 import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { Pool } from "pg";
 import { Failure, LocalDB, Row, Secrets } from "./db.js";
+import { ObjectStorage } from "./storage.js";
 import { Mutex } from "./mutex.js";
 export interface Unit {
   text: string;
@@ -275,6 +276,7 @@ export async function embeddings(
 }
 export class Knowledge {
   pool: Pool | null;
+  storage?: ObjectStorage;
   lock = new Mutex();
   namespace: string;
   constructor(
@@ -318,7 +320,7 @@ export class Knowledge {
       `CREATE EXTENSION IF NOT EXISTS vector;CREATE TABLE IF NOT EXISTS ${table}(id TEXT PRIMARY KEY,namespace TEXT NOT NULL,repo_id BIGINT NOT NULL,signature TEXT NOT NULL,embedding vector(${dim}) NOT NULL);CREATE INDEX IF NOT EXISTS ${table}_hnsw ON ${table} USING hnsw(embedding vector_cosine_ops);CREATE INDEX IF NOT EXISTS ${table}_scope ON ${table}(namespace,signature,repo_id);`,
     );
   }
-  async remoteDelete(ids: string[]) {
+  async remoteDelete(ids: string[], namespace = this.namespace) {
     if (!this.pool || !ids.length) return;
     const client = await this.pool.connect();
     try {
@@ -330,7 +332,7 @@ export class Knowledge {
         if (/^raazi_vectors_\d+$/.test(tablename))
           await client.query(
             `DELETE FROM ${tablename} WHERE namespace=$1 AND id=ANY($2)`,
-            [this.namespace, ids],
+            [namespace, ids],
           );
       await client.query("COMMIT");
     } catch (e) {
@@ -437,24 +439,40 @@ export class Knowledge {
       throw e;
     }
   }
-  async add(repo: number, title: string, filename: string, raw: Buffer) {
+  async add(
+    repo: number,
+    title: string,
+    filename: string,
+    raw: Buffer,
+    uploaded = false,
+  ) {
     return this.lock.run(async () => {
       if (!this.db.get("SELECT id FROM repositories WHERE id=?", repo))
         throw new Failure(404, "Repository not found");
       const { units, mime, warning } = await extractDocument(filename, raw);
-      const id = Number(
-        this.db.run(
-          "INSERT INTO documents(repo_id,title,content,filename,mime,original,units,status,warning) VALUES(?,?,?,?,?,?,?,'processing',?)",
-          repo,
-          title,
-          units.map((u) => u.text).join("\n\n"),
-          filename,
-          mime,
-          raw,
-          JSON.stringify(units),
-          warning,
-        ).lastInsertRowid,
-      );
+      const objectRef = uploaded
+        ? await this.storage!.put(raw, mime, "knowledge")
+        : undefined;
+      let id: number;
+      try {
+        id = Number(
+          this.db.run(
+            "INSERT INTO documents(repo_id,title,content,filename,mime,original,units,status,warning,object_ref) VALUES(?,?,?,?,?,?,?,'processing',?,?)",
+            repo,
+            title,
+            units.map((u) => u.text).join("\n\n"),
+            filename,
+            mime,
+            uploaded ? null : raw,
+            JSON.stringify(units),
+            warning,
+            objectRef ? JSON.stringify(objectRef) : null,
+          ).lastInsertRowid,
+        );
+      } catch (error) {
+        if (objectRef) await this.storage!.delete(objectRef);
+        throw error;
+      }
       try {
         await this.index(id);
       } catch {
@@ -464,23 +482,26 @@ export class Knowledge {
     });
   }
   async remove(where: "id" | "repo_id", id: number) {
-    const docs = this.db.all(`SELECT id FROM documents WHERE ${where}=?`, id);
-    const ids = docs.flatMap((d) =>
-      this.db
-        .all("SELECT id FROM passages WHERE doc_id=?", d.id)
-        .map((p) => p.id),
+    const docs = this.db.all(
+      `SELECT id,object_ref FROM documents WHERE ${where}=?`,
+      id,
     );
-    await this.remoteDelete(ids);
-    this.db.transaction(() => {
-      for (const doc of docs) {
+    for (const doc of docs) {
+      const ids = this.db
+        .all("SELECT id FROM passages WHERE doc_id=?", doc.id)
+        .map((p) => p.id);
+      await this.remoteDelete(ids);
+      if (doc.object_ref)
+        await this.storage!.delete(JSON.parse(doc.object_ref));
+      this.db.transaction(() => {
         this.db.run("DELETE FROM chunks WHERE doc_id=?", doc.id);
         this.db.run("DELETE FROM documents WHERE id=?", doc.id);
-      }
-    });
+      });
+    }
   }
   source(id: string, allowed: number[]): Row {
     const row = this.db.get(
-      "SELECT p.*,d.title,d.filename,d.mime,d.original,d.warning,d.content AS document_content FROM passages p JOIN documents d ON d.id=p.doc_id WHERE p.id=?",
+      "SELECT p.*,d.title,d.filename,d.mime,d.original,d.object_ref,d.warning,d.content AS document_content FROM passages p JOIN documents d ON d.id=p.doc_id WHERE p.id=?",
       id,
     );
     if (!row || !allowed.includes(row.repo_id))

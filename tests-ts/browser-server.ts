@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { createApp } from "../server/app.js";
+import { memoryStorage } from "./storage-fixture.js";
 import { mockRequest } from "./fixtures.js";
 const root = mkdtempSync(join(tmpdir(), "raazi-browser-test-"));
 const service = await createApp({
@@ -12,6 +13,7 @@ const service = await createApp({
   secure: false,
   adminGroup: "admins",
   request: mockRequest,
+  objectFactory: memoryStorage().factory,
 });
 const server = service.app.listen(8091, "127.0.0.1");
 for (const signal of ["SIGINT", "SIGTERM"] as const)

@@ -7,9 +7,11 @@ import type {
   Group,
   Message,
   Source,
+  Attachment,
 } from "../shared/types";
 import { api, setCSRF } from "./api";
 import { Sidebar } from "./Sidebar";
+import { AttachmentChips, YourFiles } from "./Uploads";
 import { Admin } from "./Admin";
 import { Modal, Field, Icon } from "./ui";
 import "./style.css";
@@ -74,11 +76,22 @@ function Answer({ message }: { message: Message }) {
   } catch {
     /* Old messages without source metadata remain readable. */
   }
+  let attached: Attachment[] = [];
+  try {
+    const value =
+      typeof message.attachments === "string"
+        ? JSON.parse(message.attachments)
+        : message.attachments;
+    if (Array.isArray(value)) attached = value;
+  } catch {
+    /* Keep older messages readable. */
+  }
   const safeURL = (s: Source) =>
     /^\/sources\/[a-f0-9]{32}$/.test(s.url) ? s.url : "#";
   return (
     <article className={"message " + message.role}>
       <div className="author">{message.role === "user" ? "You" : "Raazi"}</div>
+      <AttachmentChips files={attached} />
       <div className="text">
         {message.content.split(/(\[\d+\])/).map((part, n) => {
           const index = /^\[(\d+)\]$/.exec(part),
@@ -126,6 +139,8 @@ function App() {
     [folder, setFolder] = useState<string | null>(null),
     [messages, setMessages] = useState<Message[]>([]),
     [drafts, setDrafts] = useState<Record<string, string>>({}),
+    [draftFiles, setDraftFiles] = useState<Record<string, Attachment[]>>({}),
+    [busyText, setBusyText] = useState("Raazi is thinking…"),
     [repository, setRepository] = useState(""),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
@@ -135,10 +150,12 @@ function App() {
     [editor, setEditor] = useState<Editor | null>(null),
     [dialogError, setDialogError] = useState("");
   const end = useRef<HTMLDivElement>(null),
+    fileInput = useRef<HTMLInputElement>(null),
     loadSequence = useRef(0),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
     draftKey = cid ?? "new:" + (folder ?? ""),
-    draft = drafts[draftKey] ?? "";
+    draft = drafts[draftKey] ?? "",
+    files = draftFiles[draftKey] ?? [];
   const setDraft = (value: string) =>
     setDrafts((d) => ({ ...d, [draftKey]: value }));
   const notify = (message: string) => {
@@ -165,7 +182,11 @@ function App() {
   useEffect(() => {
     end.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [messages, busy]);
-  async function perform(fn: () => Promise<void>) {
+  async function perform(
+    fn: () => Promise<void>,
+    label = "Raazi is thinking…",
+  ) {
+    setBusyText(label);
     setBusy(true);
     setError("");
     try {
@@ -207,10 +228,48 @@ function App() {
       setError((e as Error).message);
     }
   }
+  async function uploadFiles(selected: FileList | null) {
+    if (!selected?.length || busy) return;
+    if (files.length + selected.length > 5) {
+      setError("Use at most five files in one message.");
+      return;
+    }
+    await perform(async () => {
+      for (const file of Array.from(selected)) {
+        const form = new FormData();
+        form.append("file", file);
+        const uploaded = await api<Attachment>(
+          "/api/attachments",
+          "POST",
+          form,
+        );
+        setDraftFiles((d) => ({
+          ...d,
+          [draftKey]: [...(d[draftKey] ?? []), uploaded],
+        }));
+      }
+    }, "Upload and index files…");
+  }
+  async function retryFile(file: Attachment) {
+    await perform(async () => {
+      const updated = await api<Attachment>(
+        "/api/attachments/" + file.id + "/reindex",
+        "POST",
+      );
+      setDraftFiles((d) => ({
+        ...d,
+        [draftKey]: (d[draftKey] ?? []).map((f) =>
+          f.id === updated.id ? updated : f,
+        ),
+      }));
+    }, "Reindex file…");
+  }
   async function send(e: FormEvent) {
     e.preventDefault();
-    if (!draft.trim() || busy) return;
-    const prompt = draft;
+    if (!draft.trim() || busy || files.some((f) => f.status !== "ready"))
+      return;
+    const prompt = draft,
+      submittedFiles = files;
     await perform(async () => {
       const result = await api<{
         conversation_id: string;
@@ -221,16 +280,27 @@ function App() {
         conversation_id: cid ?? "",
         group_id: folder,
         repository_id: repository ? Number(repository) : null,
+        attachment_ids: submittedFiles.map((f) => f.id),
       });
       setMessages((m) => [
         ...m,
-        { role: "user", content: prompt, sources: [] },
+        {
+          role: "user",
+          content: prompt,
+          sources: [],
+          attachments: submittedFiles,
+        },
         { role: "assistant", content: result.content, sources: result.sources },
       ]);
       setDrafts((d) => ({
         ...d,
         [draftKey]: "",
         [result.conversation_id]: "",
+      }));
+      setDraftFiles((d) => ({
+        ...d,
+        [draftKey]: [],
+        [result.conversation_id]: [],
       }));
       setCid(result.conversation_id);
       await refresh();
@@ -351,6 +421,7 @@ function App() {
             setMessages([]);
             setCid(null);
             setDrafts({});
+            setDraftFiles({});
           })
         }
       />
@@ -462,13 +533,40 @@ function App() {
                 ))}
                 {busy && (
                   <p className="help" role="status">
-                    Raazi is thinking…
+                    {busyText}
                   </p>
                 )}
                 <div ref={end} />
               </div>
             )}
             <form className="composer" onSubmit={send}>
+              <AttachmentChips
+                files={files}
+                busy={busy}
+                onRemove={(id) =>
+                  setDraftFiles((d) => ({
+                    ...d,
+                    [draftKey]: files.filter((f) => f.id !== id),
+                  }))
+                }
+                onRetry={(f) => void retryFile(f)}
+              />
+              <input
+                ref={fileInput}
+                type="file"
+                hidden
+                aria-label="Choose chat files"
+                multiple
+                accept={
+                  workspace.supports_images
+                    ? ".pdf,.docx,.txt,.md,.png,.jpg,.jpeg,.webp"
+                    : ".pdf,.docx,.txt,.md"
+                }
+                onChange={(e) => {
+                  void uploadFiles(e.target.files);
+                  e.target.value = "";
+                }}
+              />
               <textarea
                 aria-label="Message Raazi"
                 placeholder="Ask Raazi anything about your work…"
@@ -487,26 +585,53 @@ function App() {
                 }}
               />
               <div className="composer-footer">
-                <select
-                  aria-label="Knowledge repository"
-                  value={repository}
-                  onChange={(e) => setRepository(e.target.value)}
-                >
-                  <option value="">All available knowledge</option>
-                  {workspace.repositories.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="composer-controls">
+                  <button
+                    type="button"
+                    className="upload-button"
+                    aria-label="Upload files"
+                    title="Upload a document or image"
+                    aria-describedby="upload-help"
+                    disabled={
+                      busy || !workspace.uploads_enabled || files.length >= 5
+                    }
+                    onClick={() => fileInput.current?.click()}
+                  >
+                    <Icon name="plus" />
+                  </button>
+                  <select
+                    aria-label="Knowledge repository"
+                    value={repository}
+                    onChange={(e) => setRepository(e.target.value)}
+                  >
+                    <option value="">All available knowledge</option>
+                    {workspace.repositories.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
                 <button
                   className="primary send"
                   aria-label="Send message"
-                  disabled={busy || !draft.trim()}
+                  disabled={
+                    busy ||
+                    !draft.trim() ||
+                    files.some((f) => f.status !== "ready")
+                  }
                 >
                   ↑
                 </button>
               </div>
+              <p id="upload-help" className="upload-help">
+                {workspace.uploads_enabled
+                  ? "Files stay private. Documents: 20 MB." +
+                    (workspace.supports_images
+                      ? " Images: 10 MB."
+                      : " Image input is off.")
+                  : "Uploads are off. Ask an admin to configure S3 storage."}
+              </p>
             </form>
             <p className="footnote">
               Raazi can make mistakes. Check the linked sources for important
@@ -542,6 +667,12 @@ function App() {
                 </section>
               ))}
             </div>
+            <YourFiles
+              onUse={(file) => {
+                setDraftFiles((d) => ({ ...d, ["new:"]: [file] }));
+                newChat();
+              }}
+            />
             {!workspace.repositories.length && (
               <section className="card">
                 <h3>Your library is waiting</h3>

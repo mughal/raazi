@@ -1,5 +1,11 @@
 import { useState, useEffect, FormEvent } from "react";
-import type { AdminData, EmbeddingSettings, User } from "../shared/types";
+import type {
+  AdminData,
+  EmbeddingSettings,
+  User,
+  StorageSettings,
+} from "../shared/types";
+import { StorageForm } from "./StorageForm";
 import { api } from "./api";
 import { Field, Modal } from "./ui";
 type Props = {
@@ -10,16 +16,19 @@ export function Admin({ notify, refresh }: Props) {
   const [tab, setTab] = useState("Models"),
     [data, setData] = useState<AdminData | null>(null),
     [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null),
+    [storage, setStorage] = useState<StorageSettings | null>(null),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [editUser, setEditUser] = useState<User | null>(null);
   async function load() {
-    const [a, e] = await Promise.all([
+    const [a, e, st] = await Promise.all([
       api<AdminData>("/api/admin"),
       api<EmbeddingSettings>("/api/admin/embeddings"),
+      api<StorageSettings>("/api/admin/storage"),
     ]);
     setData(a);
     setEmbedding(e);
+    setStorage(st);
   }
   useEffect(() => {
     load().catch((e) => setError(e.message));
@@ -43,7 +52,7 @@ export function Admin({ notify, refresh }: Props) {
     return new FormData(e.currentTarget);
   };
   const value = (f: FormData, key: string) => String(f.get(key) ?? "");
-  if (!data || !embedding)
+  if (!data || !embedding || !storage)
     return (
       <div className="page">
         <h1>Administration</h1>
@@ -62,25 +71,38 @@ export function Admin({ notify, refresh }: Props) {
         </div>
       </div>
       <div className="tabs" role="tablist">
-        {["Models", "Embeddings", "Knowledge", "Users", "Audit"].map((t) => (
-          <button
-            key={t}
-            role="tab"
-            aria-selected={t === tab}
-            className={tab === t ? "active" : ""}
-            onClick={() => {
-              setTab(t);
-              setError("");
-            }}
-          >
-            {t}
-          </button>
-        ))}
+        {["Models", "Embeddings", "Storage", "Knowledge", "Users", "Audit"].map(
+          (t) => (
+            <button
+              key={t}
+              role="tab"
+              aria-selected={t === tab}
+              className={tab === t ? "active" : ""}
+              onClick={() => {
+                setTab(t);
+                setError("");
+              }}
+            >
+              {t}
+            </button>
+          ),
+        )}
       </div>
       {error && (
         <div className="notice" role="alert">
           {error}
         </div>
+      )}
+      {tab === "Storage" && (
+        <StorageForm
+          key={JSON.stringify(storage)}
+          settings={storage}
+          reload={async () => {
+            await load();
+            await refresh();
+          }}
+          notify={notify}
+        />
       )}
       {tab === "Models" && (
         <form
@@ -96,6 +118,7 @@ export function Admin({ notify, refresh }: Props) {
                   system_prompt: value(f, "system_prompt"),
                   api_key: value(f, "api_key"),
                   clear_api_key: f.has("clear_api_key"),
+                  supports_images: f.has("supports_images"),
                 }),
               "Model settings saved",
             );
@@ -131,6 +154,18 @@ export function Admin({ notify, refresh }: Props) {
             <input type="checkbox" name="clear_api_key" />
             Remove saved key
           </label>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              name="supports_images"
+              defaultChecked={!!data.settings.supports_images}
+            />
+            This model accepts image input
+          </label>
+          <p className="help">
+            Enable this only for a model that accepts image_url content. Image
+            knowledge indexing is not supported yet.
+          </p>
           <Field label="System prompt">
             <textarea
               name="system_prompt"

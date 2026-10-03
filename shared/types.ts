@@ -24,7 +24,8 @@ export interface Group {
 }
 export interface Source {
   source_id: string;
-  document_id: number;
+  document_id: number | null;
+  attachment_id?: string;
   title: string;
   content: string;
   page: number | null;
@@ -36,6 +37,7 @@ export interface Message {
   role: "user" | "assistant";
   content: string;
   sources: Source[] | string;
+  attachments?: Attachment[] | string;
 }
 export interface Repository {
   id: number;
@@ -49,6 +51,8 @@ export interface Workspace {
   groups: Group[];
   repositories: Repository[];
   chat_storage: string;
+  uploads_enabled: boolean;
+  supports_images: boolean;
 }
 export interface Session {
   user: User | null;
@@ -56,6 +60,7 @@ export interface Session {
   development: boolean;
 }
 export interface Settings {
+  supports_images: boolean;
   base_url: string;
   model: string;
   system_prompt: string;
@@ -84,4 +89,28 @@ export interface AdminData {
   repositories: Repository[];
   documents: KnowledgeDocument[];
   audit: { action: string; user_id: string; created_at: string }[];
+}
+
+export interface Attachment {
+  id: string;
+  filename: string;
+  mime: string;
+  kind: "document" | "image";
+  size: number;
+  status: string;
+  error: string;
+  warning: string;
+  search_mode: "vision" | "keyword" | "vector";
+  file_url: string;
+  created_at: string;
+}
+export interface StorageSettings {
+  enabled: boolean;
+  endpoint: string;
+  region: string;
+  bucket: string;
+  prefix: string;
+  force_path_style: boolean;
+  has_access_key: boolean;
+  has_secret_key: boolean;
 }

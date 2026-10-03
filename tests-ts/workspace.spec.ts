@@ -21,6 +21,21 @@ test("React workspace: settings, real uploads, citations, folders, persisted cha
   await page.getByLabel("Model name", { exact: true }).fill("fixture-model");
   await page.getByRole("button", { name: "Save model settings" }).click();
   await expect(page.getByRole("status")).toContainText("Model settings saved");
+  await page.getByRole("tab", { name: "Storage" }).click();
+  await page.getByLabel("Enable file uploads").check();
+  await page.getByLabel("S3 endpoint").fill("http://s3.test");
+  await page.getByLabel("S3 bucket").fill("test-bucket");
+  await page.getByLabel("S3 access key").fill("test-access");
+  await page.getByLabel("S3 secret key").fill("test-secret");
+  await page.getByRole("button", { name: "Test bucket" }).click();
+  await expect(
+    page.getByText(
+      "Bucket test passed. Access, write, read, and delete are available.",
+    ),
+  ).toBeVisible();
+  await page.screenshot({ path: "data/react-storage.png", fullPage: true });
+  await page.getByRole("button", { name: "Save storage settings" }).click();
+  await expect(page.getByRole("status")).toContainText("Uploads are available");
   await page.getByRole("tab", { name: "Embeddings" }).click();
   await page.getByLabel("Use an embedding model").check();
   await page.getByLabel("Embedding base URL").fill("http://fixture.test/v1");
@@ -138,4 +153,90 @@ test("mobile drawer and folder collapse persist across reload", async ({
     )
     .toBe(48);
   await page.screenshot({ path: "data/react-mobile.png", fullPage: true });
+});
+
+test("chat + uploads private PDFs and images, opens page citations, and restores file history", async ({
+  page,
+  context,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByLabel("This model accepts image input").check();
+  await page.getByRole("button", { name: "Save model settings" }).click();
+  await expect(page.getByRole("status")).toContainText("Model settings saved");
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  const picker = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload files" }).click();
+  await (
+    await picker
+  ).setFiles({
+    name: "private-policy.pdf",
+    mimeType: "application/pdf",
+    buffer: await policyPDF(),
+  });
+  await expect(page.locator(".composer .attachment-chip")).toContainText(
+    "Private knowledge",
+  );
+  await page
+    .getByLabel("Message Raazi")
+    .fill("Travel expenses manager approval");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toBeVisible();
+  await expect(page.locator(".message.user .attachment-chip")).toContainText(
+    "private-policy.pdf",
+  );
+  const popup = context.waitForEvent("page");
+  await page.locator(".citation").first().click();
+  const source = await popup;
+  await expect(
+    source.getByRole("heading", { name: "private-policy.pdf" }),
+  ).toBeVisible();
+  await expect(
+    source.getByRole("link", { name: "Open original PDF at page 2" }),
+  ).toHaveAttribute("href", /\/api\/sources\/[a-f0-9]{32}\/file#page=2$/);
+  await source.close();
+  const sharp = (await import("sharp")).default;
+  await page.getByLabel("Choose chat files").setInputFiles({
+    name: "diagram.png",
+    mimeType: "image/png",
+    buffer: await sharp({
+      create: { width: 80, height: 60, channels: 3, background: "#006b62" },
+    })
+      .png()
+      .toBuffer(),
+  });
+  await expect(page.locator(".composer .attachment-chip img")).toBeVisible();
+  await expect(page.locator(".composer")).toContainText(
+    "Image knowledge indexing is not supported yet",
+  );
+  await page.getByLabel("Message Raazi").fill("Explain this diagram");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(2);
+  await page.reload();
+  await page
+    .getByRole("button", {
+      name: "Travel expenses manager approval",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.locator(".message.user .attachment-chip img"),
+  ).toBeVisible();
+  await page.screenshot({ path: "data/react-uploads.png", fullPage: true });
+  await page
+    .getByRole("button", { name: "Knowledge", exact: true })
+    .first()
+    .click();
+  await expect(page.getByRole("heading", { name: "Your files" })).toBeVisible();
+  await expect(page.locator(".your-files")).toContainText("private-policy.pdf");
+  await expect(page.locator(".your-files")).toContainText("diagram.png");
+  expect(errors).toEqual([]);
 });

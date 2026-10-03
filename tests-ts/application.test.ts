@@ -20,6 +20,7 @@ import {
 } from "../server/knowledge";
 import { Secrets, LocalDB } from "../server/db";
 import { RequestJSON } from "../server/knowledge";
+import { memoryStorage, storageInput } from "./storage-fixture";
 import { policyPDF, policyDOCX, mockRequest } from "./fixtures";
 let handler: RequestJSON = mockRequest;
 let root: string,
@@ -37,7 +38,9 @@ beforeEach(async () => {
     secure: false,
     adminGroup: "admins",
     request: (url, body, key) => handler(url, body, key),
+    objectFactory: memoryStorage().factory,
   });
+  await service.storage.save(storageInput);
   admin = request.agent(service.app);
   let result = await admin.get("/api/session");
   await admin.post("/auth/development").set("X-CSRF-Token", result.body.csrf);

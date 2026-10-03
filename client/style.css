@@ -1230,3 +1230,95 @@ label > select {
   width: 22px;
   height: 22px;
 }
+
+.composer-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.upload-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 6px;
+  border-radius: 50%;
+  background: transparent;
+  flex-shrink: 0;
+}
+.composer-controls select {
+  max-width: 100%;
+  min-width: 0;
+}
+.upload-help {
+  margin: 7px 0 0;
+  color: #7c8a80;
+  font-size: 10px;
+  line-height: 1.5;
+}
+.attachment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-bottom: 14px;
+}
+.attachment-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border: 1px solid #dce5df;
+  padding: 9px 11px;
+  border-radius: 12px;
+  background: #fff;
+  max-width: 100%;
+}
+.attachment-chip img {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 7px;
+}
+.attachment-chip > div {
+  min-width: 0;
+}
+.attachment-chip a {
+  font-size: 12px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.attachment-chip small {
+  display: block;
+  color: #87958c;
+  font-size: 10px;
+  line-height: 1.5;
+  max-width: 330px;
+}
+.attachment-chip.attachment-error {
+  border-color: #e7cbbf;
+}
+.attachment-error small {
+  color: #a06753;
+}
+.success-note {
+  padding: 12px;
+  border-radius: 8px;
+  background: #eef6f0;
+  color: #246044;
+  font-size: 12px;
+}
+.your-files {
+  margin-top: 22px;
+}
+.your-files .row a {
+  font-size: 12px;
+}
+@media (max-width: 760px) {
+  .attachment-chip {
+    width: 100%;
+  }
+  .composer-controls {
+    max-width: 80%;
+    gap: 8px;
+  }
+}

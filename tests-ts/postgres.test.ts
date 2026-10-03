@@ -111,3 +111,94 @@ it.skipIf(!url)(
     }
   },
 );
+
+it.skipIf(!url)(
+  "isolates private pgvector files and preserves attachment snapshots in PostgreSQL history",
+  async () => {
+    const { ObjectStorage } = await import("../server/storage"),
+      { Attachments } = await import("../server/attachments"),
+      { memoryStorage, storageInput } = await import("./storage-fixture");
+    const root = mkdtempSync(join(tmpdir(), "raazi-pg-test-")),
+      db = new LocalDB(join(root, "db.sqlite")),
+      secrets = new Secrets(root, "development"),
+      knowledge = new Knowledge(db, secrets, url, mockRequest),
+      storage = new ObjectStorage(db, secrets, memoryStorage().factory),
+      files = new Attachments(db, storage, knowledge),
+      history = new History(db, url);
+    db.run(
+      "INSERT INTO users(id,name,email,role) VALUES('u','User','u@test','user'),('v','Other','v@test','user')",
+    );
+    db.run(
+      "UPDATE settings SET embedding_url='http://fixture/v1',embedding_model='fixture',embedding_dimensions=3 WHERE id=1",
+    );
+    try {
+      await storage.save(storageInput);
+      await history.prepare();
+      const selected = await files.upload(
+        "u",
+        "selected.txt",
+        Buffer.from("Manager approval is required for travel."),
+      );
+      const unrelated = await files.upload(
+        "u",
+        "unrelated.txt",
+        Buffer.from("Travel expenses follow a different rule."),
+      );
+      const other = await files.upload(
+        "v",
+        "secret.txt",
+        Buffer.from("Manager approval is private to another account."),
+      );
+      expect(selected.status).toBe("ready");
+      expect(unrelated.status).toBe("ready");
+      expect(other.status).toBe("ready");
+      const found = await files.retrieve("u", "manager travel", [selected.id]);
+      expect(found).toHaveLength(1);
+      expect(found[0].attachment_id).toBe(selected.id);
+      expect(
+        await files.retrieve("v", "manager travel", [selected.id]),
+      ).toHaveLength(0);
+      expect(await knowledge.retrieve("travel", [1])).toHaveLength(0);
+      const cid = await history.append(
+        "u",
+        undefined,
+        "Question",
+        "Answer",
+        found,
+        null,
+        [selected],
+      );
+      expect(
+        JSON.parse((await history.messages("u", cid))[0].attachments)[0].id,
+      ).toBe(selected.id);
+      await files.remove("u", selected.id);
+      expect(await files.retrieve("u", "travel", [selected.id])).toHaveLength(
+        0,
+      );
+      await history.delete("u", cid);
+    } finally {
+      if (knowledge.pool)
+        for (const uid of ["u", "v"])
+          await knowledge.pool.query(
+            "DELETE FROM " + knowledge.table(3) + " WHERE namespace=$1",
+            [files.namespace(uid)],
+          );
+      if (history.pool) {
+        await history.pool.query(
+          "DELETE FROM raazi_chat_conversations WHERE namespace=$1",
+          [history.namespace],
+        );
+        await history.pool.query(
+          "DELETE FROM raazi_chat_imports WHERE namespace=$1",
+          [history.namespace],
+        );
+      }
+      await history.close();
+      await knowledge.close();
+      db.close();
+      if (!resolve(root).startsWith(resolve(tmpdir()) + sep))
+        throw new Error("Unsafe cleanup");
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
