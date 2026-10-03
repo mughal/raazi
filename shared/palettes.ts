@@ -24,9 +24,17 @@ export const composerShadeIds = [
   "lavender",
 ] as const;
 export type ComposerShadeId = (typeof composerShadeIds)[number];
+export const composerSizeIds = ["compact", "comfortable", "spacious"] as const;
+export type ComposerSizeId = (typeof composerSizeIds)[number];
+export const composerSizes: { id: ComposerSizeId; label: string }[] = [
+  { id: "compact", label: "Compact" },
+  { id: "comfortable", label: "Comfortable" },
+  { id: "spacious", label: "Spacious" },
+];
 export interface Appearance {
   palette: PaletteId;
   composer_shade: ComposerShadeId;
+  composer_size: ComposerSizeId;
 }
 export const composerShades: { id: ComposerShadeId; label: string }[] = [
   { id: "mist", label: "Mist" },

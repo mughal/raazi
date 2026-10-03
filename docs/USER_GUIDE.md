@@ -40,7 +40,9 @@ Open **Your profile → Color palette**. Select Forest, Ocean, Indigo, Plum, Amb
 
 Choose a **Composer shade**: Mist, Ivory, Mint, Sky, or Lavender. The preview shows its light background. The composer shade is independent from the workspace accent color.
 
-Raazi saves both choices to your account. The workspace palette applies to buttons, links, tabs, and chat accents. The choice remains after reload and sign-in on another browser.
+Choose **Composer size**: Compact, Comfortable, or Spacious. Compact is the default and uses about half the previous height. Use a larger size for longer questions. The preview shows your choice.
+
+Raazi saves these choices to your account. The workspace palette applies to buttons, links, tabs, and chat accents. The choice remains after reload and sign-in on another browser.
 
 ## Upload a file
 

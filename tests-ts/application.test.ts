@@ -865,7 +865,11 @@ it("keeps composer shades private and independent from accent colors", async () 
   await mutate("put", "/api/preferences", { palette: "ocean" });
   expect(
     (await mutate("put", "/api/preferences", { composer_shade: "sky" })).body,
-  ).toEqual({ palette: "ocean", composer_shade: "sky" });
+  ).toEqual({
+    palette: "ocean",
+    composer_shade: "sky",
+    composer_size: "compact",
+  });
   await mutate("put", "/api/preferences", { palette: "plum" });
   expect((await admin.get("/api/session")).body.user.composer_shade).toBe(
     "sky",
@@ -910,4 +914,31 @@ it("saves labeled demo replies without calling a model, and stops demo mode afte
   expect(real.status).toBe(200);
   expect(real.body.content).not.toContain("## Demo response");
   expect(calls).toHaveBeenCalledOnce();
+});
+
+it("persists composer sizes without changing colors or another user's size", async () => {
+  expect((await admin.get("/api/session")).body.user.composer_size).toBe(
+    "compact",
+  );
+  expect(
+    (await mutate("put", "/api/preferences", { composer_size: "spacious" }))
+      .status,
+  ).toBe(200);
+  await mutate("put", "/api/preferences", {
+    palette: "plum",
+    composer_shade: "ivory",
+  });
+  expect((await admin.get("/api/session")).body.user).toMatchObject({
+    composer_size: "spacious",
+    palette: "plum",
+    composer_shade: "ivory",
+  });
+  expect(
+    (await mutate("put", "/api/preferences", { composer_size: "huge" })).status,
+  ).toBe(400);
+  const other = await user("size-user");
+  expect(
+    (await request(service.app).get("/api/session").set("Cookie", other.cookie))
+      .body.user.composer_size,
+  ).toBe("compact");
 });

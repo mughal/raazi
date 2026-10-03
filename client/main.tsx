@@ -116,7 +116,13 @@ function App() {
       session?.user?.palette ?? "forest";
     document.documentElement.dataset.composerShade =
       session?.user?.composer_shade ?? "mist";
-  }, [session?.user?.palette, session?.user?.composer_shade]);
+    document.documentElement.dataset.composerSize =
+      session?.user?.composer_size ?? "compact";
+  }, [
+    session?.user?.palette,
+    session?.user?.composer_shade,
+    session?.user?.composer_size,
+  ]);
   useEffect(() => {
     loadSession().catch((e) => setError(e.message));
     return () => {
@@ -713,6 +719,7 @@ function App() {
             <PaletteSettings
               palette={session.user.palette ?? "forest"}
               composer_shade={session.user.composer_shade ?? "mist"}
+              composer_size={session.user.composer_size ?? "compact"}
               onSaved={(appearance) => {
                 setSession((s) =>
                   s?.user ? { ...s, user: { ...s.user, ...appearance } } : s,

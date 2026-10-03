@@ -92,6 +92,7 @@ export class LocalDB {
       users: {
         palette: "TEXT NOT NULL DEFAULT 'forest'",
         composer_shade: "TEXT NOT NULL DEFAULT 'mist'",
+        composer_size: "TEXT NOT NULL DEFAULT 'compact'",
       },
       settings: {
         supports_images: "INTEGER NOT NULL DEFAULT 0",

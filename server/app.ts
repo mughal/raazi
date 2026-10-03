@@ -10,7 +10,11 @@ import { z } from "zod";
 import { LocalDB, Secrets, Failure, Row } from "./db.js";
 import { ObjectStorage, storageSchema, ObjectFactory } from "./storage.js";
 import { Attachments } from "./attachments.js";
-import { composerShadeIds, paletteIds } from "../shared/palettes.js";
+import {
+  composerSizeIds,
+  composerShadeIds,
+  paletteIds,
+} from "../shared/palettes.js";
 import type { Attachment } from "../shared/types.js";
 import { History } from "./history.js";
 import {
@@ -79,6 +83,7 @@ const publicUser = (u: Row) =>
       "disabled",
       "palette",
       "composer_shade",
+      "composer_size",
     ].map((k) => [k, u[k]]),
   );
 export async function createApp(config: Config) {
@@ -236,22 +241,31 @@ export async function createApp(config: Config) {
         .object({
           palette: z.enum(paletteIds).optional(),
           composer_shade: z.enum(composerShadeIds).optional(),
+          composer_size: z.enum(composerSizeIds).optional(),
         })
         .strict()
         .refine(
-          (d) => d.palette !== undefined || d.composer_shade !== undefined,
+          (d) =>
+            d.palette !== undefined ||
+            d.composer_shade !== undefined ||
+            d.composer_size !== undefined,
           "Choose an appearance setting.",
         ),
       req,
     );
     db.run(
-      "UPDATE users SET palette=COALESCE(?,palette),composer_shade=COALESCE(?,composer_shade) WHERE id=?",
+      "UPDATE users SET palette=COALESCE(?,palette),composer_shade=COALESCE(?,composer_shade),composer_size=COALESCE(?,composer_size) WHERE id=?",
       data.palette ?? null,
       data.composer_shade ?? null,
+      data.composer_size ?? null,
       res.locals.user.id,
     );
     const saved = current(res)!;
-    res.json({ palette: saved.palette, composer_shade: saved.composer_shade });
+    res.json({
+      palette: saved.palette,
+      composer_shade: saved.composer_shade,
+      composer_size: saved.composer_size,
+    });
   });
   app.post("/auth/development", async (_req, res) => {
     if (config.mode !== "development") throw new Failure(404, "Not found");

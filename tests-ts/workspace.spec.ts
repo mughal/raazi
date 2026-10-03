@@ -478,3 +478,49 @@ test("polished composer formats Markdown, copies answers and code, and edits or 
   await page.screenshot({ path: "data/react-chat-mobile.png", fullPage: true });
   expect(errors).toEqual([]);
 });
+
+test("composer size controls persist and compact halves the normal height", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const height = async () =>
+    (await page.locator(".composer").boundingBox())!.height;
+  const compactHeight = await height();
+  expect(compactHeight).toBeLessThanOrEqual(85);
+  await page.getByRole("button", { name: "Your profile" }).click();
+  await page.getByRole("radio", { name: "Comfortable", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-composer-size",
+    "comfortable",
+  );
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  const comfortableHeight = await height();
+  expect(compactHeight / comfortableHeight).toBeLessThan(0.6);
+  await page.getByRole("button", { name: "Your profile" }).click();
+  await page.getByRole("radio", { name: "Spacious", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-composer-size",
+    "spacious",
+  );
+  await page.reload();
+  await page.getByRole("button", { name: "Your profile" }).click();
+  await expect(
+    page.getByRole("radio", { name: "Spacious", exact: true }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  expect(await height()).toBeGreaterThan(comfortableHeight);
+  await page.getByRole("button", { name: "Your profile" }).click();
+  await page.getByRole("radio", { name: "Compact", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-composer-size",
+    "compact",
+  );
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.screenshot({ path: "data/react-compact-composer.png" });
+  await page.setViewportSize({ width: 390, height: 660 });
+  expect(await height()).toBeLessThanOrEqual(85);
+  await page.screenshot({ path: "data/react-compact-composer-mobile.png" });
+});
