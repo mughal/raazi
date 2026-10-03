@@ -13,8 +13,8 @@
     "test": "vitest run",
     "test:browser": "npm run build && playwright test",
     "backup": "tsx server/backup.ts",
-    "format": "prettier --write client server shared tests-ts *.ts *.json README.md docs",
-    "format:check": "prettier --check client server shared tests-ts *.ts *.json README.md docs"
+    "format": "prettier --write client server shared tests-ts *.ts *.json README.md docs *.yaml",
+    "format:check": "prettier --check client server shared tests-ts *.ts *.json README.md docs *.yaml"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

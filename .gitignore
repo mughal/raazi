@@ -8,3 +8,10 @@ node_modules/
 dist/
 playwright-report/
 test-results/
+
+.env.*
+!.env.example
+!.env.production.example
+deploy/*.pem
+deploy/*.key
+deploy/*.crt

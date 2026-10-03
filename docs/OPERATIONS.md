@@ -1,5 +1,7 @@
 # Operations guide
 
+For production containers and rollout steps, use the [production guide](PRODUCTION.md).
+
 ## Run the application
 
 Use Node.js 22.12 or later. Run one Node application process.

@@ -20,6 +20,12 @@ Deleting a folder keeps its chats. Folder membership does not change knowledge a
 
 Draft text and selected files remain when you change pages. Drafts do not remain after a browser reload. Saved messages and folder collapse settings do remain.
 
+## Choose your colors
+
+Open **Your profile → Color palette**. Select Forest, Ocean, Indigo, Plum, Amber, or Slate.
+
+Raazi saves the choice to your account. It applies to buttons, links, tabs, and chat accents. The choice remains after reload and sign-in on another browser.
+
 ## Upload a file
 
 1. Select **+** beside the repository selector in chat.

@@ -668,3 +668,48 @@ it("accepts multilingual text up to the character limit rather than limiting it 
     )!.n,
   ).toBe(360000);
 });
+
+it("saves only the current user's palette and validates preferences and CSRF", async () => {
+  expect((await admin.get("/api/session")).body.user.palette).toBe("forest");
+  expect(
+    (await admin.put("/api/preferences").send({ palette: "ocean" })).status,
+  ).toBe(403);
+  expect(
+    (await mutate("put", "/api/preferences", { palette: "ocean" })).status,
+  ).toBe(200);
+  expect((await admin.get("/api/session")).body.user.palette).toBe("ocean");
+  expect(
+    (await mutate("put", "/api/preferences", { palette: "invalid" })).status,
+  ).toBe(400);
+  const other = await user("palette-user");
+  expect(
+    (
+      await request(service.app)
+        .put("/api/preferences")
+        .set("Cookie", other.cookie)
+        .set("X-CSRF-Token", other.csrf)
+        .send({ palette: "plum" })
+    ).status,
+  ).toBe(200);
+  expect((await admin.get("/api/session")).body.user.palette).toBe("ocean");
+  expect(
+    service.db.get("SELECT palette FROM users WHERE id='palette-user'")!
+      .palette,
+  ).toBe("plum");
+  expect(
+    (
+      await request(service.app)
+        .put("/api/preferences")
+        .set("Cookie", other.cookie)
+        .set("X-CSRF-Token", other.csrf)
+        .send({ palette: "amber", id: "local-admin" })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await request(service.app)
+        .put("/api/preferences")
+        .send({ palette: "slate" })
+    ).status,
+  ).toBe(403);
+});

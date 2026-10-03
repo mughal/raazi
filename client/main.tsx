@@ -10,6 +10,7 @@ import type {
   Attachment,
 } from "../shared/types";
 import { api, setCSRF } from "./api";
+import { PaletteSettings } from "./PaletteSettings";
 import { Sidebar } from "./Sidebar";
 import { AttachmentChips, YourFiles } from "./Uploads";
 import { Admin } from "./Admin";
@@ -173,6 +174,10 @@ function App() {
     if (s.user) await refresh();
     else setWorkspace(null);
   }
+  useEffect(() => {
+    document.documentElement.dataset.palette =
+      session?.user?.palette ?? "forest";
+  }, [session?.user?.palette]);
   useEffect(() => {
     loadSession().catch((e) => setError(e.message));
     return () => {
@@ -687,6 +692,15 @@ function App() {
           <div className="page">
             <div className="eyebrow">ENTERPRISE CONTEXT</div>
             <h1>Your profile</h1>
+            <PaletteSettings
+              palette={session.user.palette ?? "forest"}
+              onSaved={(palette) => {
+                setSession((s) =>
+                  s?.user ? { ...s, user: { ...s.user, palette } } : s,
+                );
+                notify("Color palette saved");
+              }}
+            />
             <section className="card profile-data">
               {[
                 ["Name", session.user.name],

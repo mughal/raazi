@@ -240,3 +240,54 @@ test("chat + uploads private PDFs and images, opens page citations, and restores
   await expect(page.locator(".your-files")).toContainText("diagram.png");
   expect(errors).toEqual([]);
 });
+
+test("account palettes update the workspace and survive reload", async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page.getByRole("button", { name: "Your profile" }).click();
+  for (const [label, id] of [
+    ["Forest", "forest"],
+    ["Ocean", "ocean"],
+    ["Indigo", "indigo"],
+    ["Plum", "plum"],
+    ["Amber", "amber"],
+    ["Slate", "slate"],
+  ]) {
+    await page.getByRole("radio", { name: label, exact: true }).check();
+    await expect(page.locator("html")).toHaveAttribute("data-palette", id);
+  }
+  await page.getByRole("radio", { name: "Ocean", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
+  await page.screenshot({ path: "data/react-palettes.png", fullPage: true });
+  await page.reload();
+  await page.getByRole("button", { name: "Your profile" }).click();
+  await expect(
+    page.getByRole("radio", { name: "Ocean", exact: true }),
+  ).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
+  await page.route("**/api/preferences", (route) =>
+    route.fulfill({
+      status: 503,
+      contentType: "application/json",
+      body: JSON.stringify({ error: "Cannot save colors." }),
+    }),
+  );
+  await page.getByRole("radio", { name: "Amber", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Cannot save colors.");
+  await expect(
+    page.getByRole("radio", { name: "Ocean", exact: true }),
+  ).toBeChecked();
+  await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
+  await page.unroute("**/api/preferences");
+  const accent = await page
+    .locator("html")
+    .evaluate((e) => getComputedStyle(e).getPropertyValue("--green").trim());
+  expect(accent).toBe("#126783");
+  expect(errors).toEqual([]);
+});

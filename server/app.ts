@@ -9,6 +9,7 @@ import { z } from "zod";
 import { LocalDB, Secrets, Failure, Row } from "./db.js";
 import { ObjectStorage, storageSchema, ObjectFactory } from "./storage.js";
 import { Attachments } from "./attachments.js";
+import { paletteIds } from "../shared/palettes.js";
 import type { Attachment } from "../shared/types.js";
 import { History } from "./history.js";
 import {
@@ -75,6 +76,7 @@ const publicUser = (u: Row) =>
       "job_title",
       "profile",
       "disabled",
+      "palette",
     ].map((k) => [k, u[k]]),
   );
 export async function createApp(config: Config) {
@@ -225,6 +227,15 @@ export async function createApp(config: Config) {
       csrf: session.csrf,
       development: config.mode === "development",
     });
+  });
+  app.put("/api/preferences", protect(), (req, res) => {
+    const data = parse(z.object({ palette: z.enum(paletteIds) }).strict(), req);
+    db.run(
+      "UPDATE users SET palette=? WHERE id=?",
+      data.palette,
+      res.locals.user.id,
+    );
+    res.json(data);
   });
   app.post("/auth/development", async (_req, res) => {
     if (config.mode !== "development") throw new Failure(404, "Not found");

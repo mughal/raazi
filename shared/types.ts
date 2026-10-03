@@ -1,4 +1,6 @@
+import type { PaletteId } from "./palettes.js";
 export interface User {
+  palette: PaletteId;
   id: string;
   name: string;
   email: string;

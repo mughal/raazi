@@ -31,6 +31,7 @@ Use **+** in chat to upload private documents or images. Image questions need a 
 | -------------------------------------- | ------------------------------------------ |
 | [User guide](docs/USER_GUIDE.md)       | Chats, folders, uploads, and citations     |
 | [Admin guide](docs/ADMIN_GUIDE.md)     | Models, S3 storage, embeddings, and access |
+| [Production guide](docs/PRODUCTION.md) | Production containers, HTTPS, and rollout  |
 | [Operations guide](docs/OPERATIONS.md) | Identity, PostgreSQL, backups, and tests   |
 
 The guides use short sentences, active voice, and direct instructions. They follow ASD-STE100 principles with some technical terms retained. They are not a certified STE document. The target is approximately 80% adoption of the style.

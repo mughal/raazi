@@ -1,0 +1,74 @@
+name: raazi-production
+services:
+  app:
+    build: .
+    image: raazi:${RAAZI_IMAGE_TAG:-local}
+    init: true
+    environment:
+      NODE_ENV: production
+      AUTH_MODE: oidc
+      COOKIE_SECURE: "true"
+      HOST: 0.0.0.0
+      PORT: "8080"
+      DATABASE: /app/data/raazi.db
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Set ENCRYPTION_KEY}
+      OIDC_DISCOVERY_URL: ${OIDC_DISCOVERY_URL:?Set OIDC_DISCOVERY_URL}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:?Set OIDC_CLIENT_ID}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:?Set OIDC_CLIENT_SECRET}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:?Set OIDC_REDIRECT_URI}
+      ADMIN_GROUP: ${ADMIN_GROUP:?Set ADMIN_GROUP}
+      VECTOR_DATABASE_URL: ${PRODUCTION_DATABASE_URL:?Set PRODUCTION_DATABASE_URL using host vectors}
+      CHAT_DATABASE_URL: ${PRODUCTION_DATABASE_URL:?Set PRODUCTION_DATABASE_URL using host vectors}
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - app_data:/app/data
+    depends_on:
+      vectors:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/api/session').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
+    stop_grace_period: 150s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  vectors:
+    image: pgvector/pgvector:0.8.6-pg17
+    environment:
+      POSTGRES_DB: raazi_vectors
+      POSTGRES_USER: raazi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U raazi -d raazi_vectors"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  app_data:
+  postgres_data:
