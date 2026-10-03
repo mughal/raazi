@@ -1,0 +1,53 @@
+{
+  "name": "raazi",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"node --env-file-if-exists=.env --import tsx --watch server/index.ts\" \"vite --host 127.0.0.1\"",
+    "build": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.server.json && vite build",
+    "start": "node --env-file-if-exists=.env dist/server/index.js",
+    "test": "vitest run",
+    "test:browser": "npm run build && playwright test",
+    "backup": "tsx server/backup.ts",
+    "format": "prettier --write client server shared tests-ts *.ts *.json README.md",
+    "format:check": "prettier --check client server shared tests-ts *.ts *.json README.md"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.11",
+    "better-sqlite3": "^12.4.1",
+    "cookie-parser": "^1.4.7",
+    "express": "^5.1.0",
+    "fflate": "^0.8.2",
+    "jose": "^6.1.0",
+    "multer": "^2.0.2",
+    "pdfjs-dist": "^4.10.38",
+    "pg": "^8.16.3",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cookie-parser": "^1.4.9",
+    "@types/express": "^5.0.3",
+    "@types/multer": "^2.0.0",
+    "@types/node": "^22.18.0",
+    "@types/pg": "^8.15.5",
+    "@types/react": "^19.1.12",
+    "@types/react-dom": "^19.1.9",
+    "@types/supertest": "^6.0.3",
+    "concurrently": "^9.2.1",
+    "pdf-lib": "^1.17.1",
+    "prettier": "^3.9.9",
+    "supertest": "^7.1.4",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.2",
+    "vite": "^6.3.5",
+    "vitest": "^4.1.11"
+  }
+}

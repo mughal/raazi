@@ -1,124 +1,134 @@
 # Raazi
 
-A compact, self-hosted enterprise AI workspace. Flask, SQLite for workspace metadata, optional PostgreSQL for history/vectors, and a dependency-free browser interface. Git starts on `dev`.
+Raazi is a compact enterprise AI workspace built in **TypeScript**: React for the interface and Node.js/Express for the API. It uses administrator-configured local chat and embedding models through OpenAI-compatible endpoints. No Python runtime is required.
 
-## Run locally (PowerShell)
+## Run locally
+
+Install Node.js 22.12 or newer, then run these commands in PowerShell:
 
 ```powershell
-python -m venv .venv
-.venv/Scripts/python -m pip install -r requirements.lock.txt
+npm ci
 ./start-dev.ps1
 ```
 
-Open http://127.0.0.1:8080 and choose **Enter development workspace**. The development login explicitly grants local administrator access. The server binds to loopback. Never expose development mode through a proxy or on a shared network.
+Open http://127.0.0.1:8080 and select **Continue as local administrator**. Development mode grants local admin access and binds to loopback.
 
-In **Admin console → Models & settings**, enter your server's API base URL (for example `http://localhost:11434/v1`), exact model identifier, and optional API key. The backend calls `/chat/completions`. No OpenAI cloud subscription or key is needed. HTTP is supported for trusted local networks; use HTTPS for network traffic carrying confidential data.
+For React and backend development with automatic reload, run `./start-dev.ps1 -Watch` and open http://127.0.0.1:5173. Vite proxies API/authentication requests to port 8080.
 
-## What works
+In **Administration → Models**, configure the local chat endpoint's base URL, model identifier, optional key, and system prompt. The server calls `/chat/completions` with `stream: false`. No OpenAI cloud subscription is needed.
 
-- Private, persisted conversations with groups, pinning, renaming, search, recency ordering, and per-user access checks.
-- A compact navigation rail and expandable history sidebar, with mobile history drawer.
-- PostgreSQL chat/message/group storage in the same container as pgvector, with a one-time import of existing SQLite history.
-- Administrator-configured OpenAI-compatible chat and embedding endpoints, separate encrypted credentials, and system instructions.
-- Enterprise sign-in using OIDC authorization code flow with PKCE through AD FS or Entra ID.
-- First-login account provisioning; administrator role derived from an exact configured group claim.
-- Names, email, department, and job title populated from signed identity claims. Admin-maintained enterprise context is included in model requests.
-- Knowledge repositories with exact AD-group restrictions; unrestricted repositories are shared with all authenticated users.
-- PDF, DOCX, text and Markdown ingestion with page/section metadata, overlapping chunks, semantic vector retrieval, keyword mode, and clickable source citations.
-- User disabling, administrative activity history, CSRF checks, secure-cookie defaults, and browser security headers.
+## Features and structure
 
-## Enterprise identity setup
+- React interface with a navigation rail, left-hand history, pinned chats, title search, folders, recency sections, and mobile drawer.
+- Private persisted chats, rename/pin/move/delete controls, saved folder collapse state, and drafts retained while navigating.
+- PostgreSQL chat storage alongside pgvector, with a one-time transactional import of SQLite history.
+- AD-backed OIDC sign-in with authorization code flow, PKCE, state, nonce, and verified signed identity claims.
+- Enterprise profiles from identity claims plus administrator-maintained context.
+- Group-restricted knowledge repositories, PDF/DOCX/TXT/Markdown ingestion, semantic vectors, keyword mode, retry/reindex, and clickable citations.
+- Administrator settings, encrypted model credentials, user disabling, audit history, CSRF checks, HTTP-only cookies, and browser security headers.
 
-Register Raazi as a confidential web application in your AD-backed identity provider. Configure the exact HTTPS callback URI, OIDC discovery endpoint, client ID, and client secret. See `.env.example` for environment-variable names; it is a reference, not an automatically loaded dotenv file.
+| Directory   | Purpose                                                                                  |
+| ----------- | ---------------------------------------------------------------------------------------- |
+| `client/`   | React components, API client, styles                                                     |
+| `server/`   | Express API, authentication, migrations, chat storage, ingestion, retrieval, backup      |
+| `shared/`   | Shared interface and API types                                                           |
+| `tests-ts/` | Vitest tests, real document fixtures, PostgreSQL integration tests, Playwright workflows |
+| `dist/`     | Generated server/browser build, ignored by Git                                           |
 
-Set these environment variables in your service host:
+`npm run build` compiles and checks TypeScript. `npm start` serves the compiled React application and API. Run it from the repository root because the server reads `server/schema.sql` there. Start and backend watch commands load an ignored `.env` file if it exists; process environment values take precedence.
 
-- `AUTH_MODE=oidc` (default).
-- `SECRET_KEY`: a stable random session signing secret of at least 32 bytes.
-- `ENCRYPTION_KEY`: a stable Fernet key generated with `.venv/Scripts/python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-- `OIDC_DISCOVERY_URL`: your tenant/provider-specific HTTPS discovery URL.
-- `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`.
-- `ADMIN_GROUP`: the exact group ID/value emitted for administrators.
-- `COOKIE_SECURE=true` (default).
-- Optional `DATABASE` (defaults to `data/raazi.db`) and `PORT` (defaults to 8080).
+## Conversion and existing data
 
-Run `.venv/Scripts/python app.py` behind a TLS reverse proxy on the same host. The redirect URI is explicit, so forwarded headers are not trusted. Configure claims `groups` (array of exact IDs), `department`, and `job_title` as needed. Entra's ordinary ID token may not include department/job title without additional configuration. Group-overage tokens are not expanded through Graph: omitted groups grant no restricted access and no admin role. Role and group membership refresh on sign-in; sessions expire after eight hours. Disabling an account in Raazi takes effect immediately on subsequent requests. Logout clears the Raazi session, not the identity provider's SSO session.
+The conversion retains the SQLite schema, profiles, documents, source IDs, PostgreSQL chat tables, pgvector tables, workspace namespace, and embedding fingerprints. Keep the existing `DATABASE` and encryption key. The server reads legacy Fernet credentials with the original key and writes new credentials using AES-256-GCM. Saved model keys do not need to be re-entered. Browser cookies changed, so users must sign in again. The Python implementation remains in Git history.
 
-Direct LDAP credential binding and IIS integrated Windows authentication are not implemented. The current default is AD-backed OIDC; confirm your environment before production integration.
-
-## Chat history and groups
-
-The left sidebar has **Pinned**, expandable **Groups**, and ungrouped history organized by recency. Search filters titles within pinned chats, groups, and history. Use the plus button beside Groups to create a folder; a chat's ellipsis menu lets you rename it, pin it, or move it to a group. Group options offer rename, **New chat in group**, and delete. Deleting a group moves its chats back to History and preserves their messages. Groups organize only your own chats; they do not grant access to knowledge repositories or other users' conversations. Folder collapse state is saved in the active database. Group ordering currently follows creation order; drag-and-drop is not implemented.
-
-When `VECTOR_DATABASE_URL` is set, chat storage automatically uses the same PostgreSQL database. Set `CHAT_DATABASE_URL` explicitly only if you need a different connection; setting it to an empty string forces local history for development. PostgreSQL preparation creates ordinary tables prefixed `raazi_chat_` alongside the pgvector tables. No extension is needed for chat rows.
-
-On the first PostgreSQL startup for a workspace, existing SQLite groups, conversations, messages, and source snapshots are imported in a single transaction. A persistent import marker prevents duplicates and prevents later restarts from resurrecting deleted chats. The original SQLite records remain as a backup snapshot and are no longer updated once PostgreSQL history is active. Stop the previous app process and back up SQLite before switching. Do not switch back to SQLite as an outage fallback: it contains the old snapshot, not newer PostgreSQL history. Further SQLite changes made after the one-time import are not imported automatically. Keep `DATABASE` and its persistent workspace namespace stable across restarts, and back up both databases.
-
-A configured PostgreSQL outage returns a storage-unavailable error; Raazi never silently writes new chats to SQLite. PostgreSQL startup fails with a clear configuration error if its chat tables cannot be prepared. The PostgreSQL account needs privileges to create the chat tables, indexes, and sequences, or these must be provisioned by a DBA.
-
-## Knowledge workspace workflow
-
-1. In **Admin console → Models & settings**, configure your chat model.
-2. In the **Embedding model** card, enter the local embedding server's base URL, model ID, optional credential, and actual output dimensions. Saving runs a test embedding and validates the response. The endpoint must implement `/embeddings` with OpenAI-compatible `input` and indexed `data` responses. Dimensions describe the model output; they are not a request to truncate it. Supported dimensions: 1–2,000.
-3. In **Knowledge**, create repositories and set exact AD group IDs. Empty groups mean all signed-in users; administrators can access everything.
-4. Upload PDF, DOCX, UTF-8 TXT or Markdown, or paste text. Maximum upload: 20 MB; extracted text: 500,000 characters; PDF: 500 pages; DOCX expanded archive: 50 MB. Scanned PDF pages need OCR upstream. Mixed PDFs report how many pages had no extractable text. DOCX extracts body paragraphs and tables; headers, footers, text boxes, and images are not indexed.
-5. Uploads progress through `processing` to `ready` or `failed`. Failed embedding/index requests retain extracted content for **Retry**. Format/extraction errors reject the upload before creating a document. Indexing is synchronous in this version; the browser shows Processing while the request runs. **Refresh status** reads the persisted state. Keep one application process (Waitress can use threads); a process-local lock serializes ingestion, embedding settings changes, and deletion. There is no durable background job queue yet. After an interrupted request, use Reindex to recover.
-6. Chat embeds the question and retrieves up to five passages from authorized, ready repositories. Without embedding settings, it uses FTS5 keyword ranking. There is no silent fallback on embedding service errors. Changing embedding endpoint/model/dimensions marks documents `needs_reindex`; stale vectors are excluded until **Reindex** succeeds. Changing vector backend also requires reindexing. API-key-only changes preserve valid vectors.
-7. Citations such as **[1]** open an authenticated source page with the exact excerpt. For PDFs, **Open PDF at page N** opens the original with a `#page=N` fragment. Page numbers mean physical PDF pages, not printed page labels. DOCX cites section/paragraph/table locations because pagination depends on rendering. Text is cited as text. Reindexing unchanged passages preserves citation links. Deleted/changed sources return unavailable. Pre-upgrade historical source snapshots have no source URLs.
-
-Original uploads are stored in the local SQLite database with extracted text and metadata; they are never served from a public upload directory. Source previews and original downloads recheck current repository permissions, even if someone knows the source URL. Model answers and excerpts are HTML-escaped; only references to supplied source IDs become links. Citations point to retrieved evidence and do not guarantee that the model's claim is supported.
-
-Existing databases are migrated additively on startup. Old text documents become page-neutral passages without contacting an embedding server. After enabling embeddings, reindex them from the admin panel. Back up your database before upgrading.
-
-## PostgreSQL / pgvector
-
-**A PostgreSQL container with pgvector is sufficient for vector search; no separate vector-database product is required.** Plain PostgreSQL does not include pgvector automatically. `compose.yaml` uses the versioned `pgvector/pgvector:0.8.6-pg17` image, a persistent volume, health checks, and a localhost-only port.
-
-When configured, PostgreSQL stores the **vector index and private chat history, messages, groups, pin states, and folder collapse states**. Users, document binaries, repository ACLs, model settings, and source metadata remain in SQLite. SQLite authenticates users and authorizes knowledge access; every PostgreSQL vector result is checked against current ready/authorized passages before it reaches the model. Chat tables separately enforce workspace namespaces and user ownership. Knowledge text is not copied into vector tables; generated answers and source excerpt snapshots are stored in chat message rows.
-
-To enable PostgreSQL, start Docker Desktop and use PowerShell:
+Before upgrading, stop the old application and run:
 
 ```powershell
-# Supply a strong password through your deployment secret mechanism.
-# Set POSTGRES_PASSWORD in the environment or ignored .env (Compose reads it).
+npm run backup
+```
+
+This uses SQLite's online backup API and copies the local encryption key into a timestamped `data/backups/` directory. Preserve an externally supplied `ENCRYPTION_KEY` through your secret-management system. Back up PostgreSQL separately. Rollback requires the matching pre-upgrade backup because newly saved credentials use the new encryption format.
+
+## Enterprise identity
+
+Register a confidential OIDC web application in AD FS or Entra ID with an explicit HTTPS callback. Configure these environment values; `.env.example` lists them:
+
+- `AUTH_MODE=oidc` — default.
+- `SECRET_KEY` — stable random signing secret of at least 32 characters.
+- `ENCRYPTION_KEY` — stable base64-encoded 32-byte encryption key.
+- `OIDC_DISCOVERY_URL` — provider's HTTPS discovery URL.
+- `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI`.
+- `ADMIN_GROUP` — exact identity-provider group ID granting administration.
+- `COOKIE_SECURE=true` — default.
+- Optional `DATABASE`, `PORT`, `HOST`; defaults are `data/raazi.db`, 8080, and `127.0.0.1`.
+
+Generate each secret separately:
+
+```powershell
+node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'
+```
+
+Run `npm run build` then `npm start` behind an HTTPS reverse proxy. Forwarded headers are not trusted. Keep development authentication local.
+
+Identity claims supply name/email, `groups` as exact IDs, and optionally `department` and `job_title`. Configure provider claims accordingly. Group-overage claims are not expanded through Graph; absent groups grant no restricted/admin access. Membership refreshes at sign-in; sessions expire after eight hours. Disabling an account takes effect on subsequent requests. Logout ends the Raazi session, not provider SSO.
+
+Direct LDAP binding and IIS integrated Windows authentication are not implemented. Automated enterprise-data/profile synchronization and workflow execution require your source schemas, permissions, and integration rules.
+
+## Chats and knowledge
+
+Use **New chat**, the plus beside **Folders**, and chat/folder ellipsis menus. Deleting a folder preserves its chats and messages in ungrouped history. Folders organize only the current user's chats and do not grant knowledge permissions. History follows recent activity. Drafts survive interface navigation but not reload. Folder order follows creation; drag-and-drop is not implemented.
+
+1. Configure the chat model in **Administration → Models**.
+2. In **Embeddings**, enable semantic search and provide the endpoint, model, optional key, and actual dimensions (1–2,000). Saving tests `/embeddings` and validates response indices, dimensions, finite values, and nonzero vectors. Dimensions do not request truncation.
+3. In **Knowledge**, create repositories with exact allowed AD group IDs. Empty groups share with all signed-in users; admins can access all repositories.
+4. Upload PDF, DOCX, UTF-8 TXT, or Markdown, or use **Add text directly**. Limits: 20 MB upload, 500,000 extracted characters, 500 PDF pages, and 50 MB declared expanded DOCX archive.
+5. Synchronous processing finishes as `ready` or `failed`. Index errors retain extracted content for **Retry**. Format errors reject the upload before creating a document. Interrupted indexing becomes failed on startup. Use **Refresh status** and **Reindex** as needed.
+6. Questions retrieve up to five authorized, ready passages. Disabled embeddings use SQLite FTS5 keyword ranking. Service errors do not silently change search mode.
+7. **[1]** citations open the exact source excerpt. PDF originals use `#page=N` physical page numbers. DOCX cites headings/paragraphs/tables without inventing pages.
+
+Scanned PDFs require upstream OCR; mixed PDFs report unextractable pages. DOCX body paragraphs and tables are indexed; images, headers, footers, and text boxes are not. Model output renders as plain text with safe source links.
+
+Changing the embedding endpoint/model/dimensions or vector backend requires reindexing. Key-only changes retain valid vectors. Reindexing unchanged passages preserves citation IDs. Deleted sources become unavailable; early messages without IDs cannot acquire links retroactively.
+
+Original uploads, source metadata, and extracted text remain in SQLite, outside public static directories. Previews/downloads recheck repository permissions. Existing private chat answers and source snapshots remain after document deletion, while original links enforce current access.
+
+## PostgreSQL with pgvector
+
+**One PostgreSQL container with pgvector is sufficient; a separate vector database is not required.** `compose.yaml` uses `pgvector/pgvector:0.8.6-pg17` with a persistent volume, health check, and localhost-only port.
+
+```powershell
+# Supply POSTGRES_PASSWORD via your environment or ignored .env.
 docker compose up -d vectors
 docker compose ps
-# Set VECTOR_DATABASE_URL in the application environment:
+# Set VECTOR_DATABASE_URL in the app environment or .env:
 # postgresql://raazi:<URL-encoded-password>@127.0.0.1:5432/raazi_vectors
 ./start-dev.ps1
 ```
 
-`.env` is read by Docker Compose, not automatically by the Flask app. The application needs `VECTOR_DATABASE_URL` in its own process environment. Chat storage defaults to that same connection. You may set `CHAT_DATABASE_URL` to override the history connection separately. Do not put a real password in Git. The PostgreSQL role must be able to create the vector extension, tables and indexes; for hardened deployment, have a DBA pre-provision these and constrain privileges.
+`VECTOR_DATABASE_URL` enables vectors and chat history in that database. `CHAT_DATABASE_URL` overrides history separately; an explicitly empty value keeps local development history. PostgreSQL stores chats, messages, folders, pins, collapse state, and semantic vectors. Users, settings, permissions, audit entries, document binaries, and source metadata remain in SQLite. A full PostgreSQL metadata migration is outside this conversion.
 
-On the first embedding-settings save, Raazi prepares a dimension-specific vector table and cosine HNSW index. Each SQLite database has a persistent namespace to isolate its vectors. Queries filter namespace, model fingerprint and allowed repository IDs; pgvector iterative scanning helps filtered approximate search. HNSW is approximate: measure recall/latency on your own data before tuning. Changing dimensions creates a separate table. Unused empty dimension tables can be retained or removed by a DBA.
+Chat tables retain their `raazi_chat_` names. The first PostgreSQL startup imports SQLite chats/groups/messages atomically. An import marker prevents duplicates or revival of deleted chats. Retained SQLite history is a stale backup snapshot, not failover storage. Keep the file and its persistent namespace stable. Configured outages fail visibly; new chats never silently fall back to SQLite.
 
-Without `VECTOR_DATABASE_URL`, development stores vectors in SQLite and performs exact cosine search in Python. This needs no extra container and is suitable for small workspaces; use pgvector as the corpus grows. A backend switch requires restarting Raazi and reindexing documents.
+Vector tables retain `raazi_vectors_<dimensions>` names and cosine HNSW indexes. Queries filter namespace, model fingerprint, and authorized repositories, then recheck current SQLite metadata. Filtered searches use pgvector iterative scanning. Without PostgreSQL, Node performs exact cosine search over local SQLite vectors.
 
-There is no distributed transaction between SQLite and PostgreSQL. Indexing publishes ready metadata only after vectors are written; failed documents are excluded from retrieval. A process crash can leave orphaned vectors, which cannot pass the metadata/ACL check but may require administrative cleanup. Deletion removes active vector rows before committing metadata removal; PostgreSQL failure leaves the document intact for retry. Back up both stores. Removing documents or changing permissions does not erase already generated answers and excerpt snapshots from existing conversations; original-file links still recheck current access.
+The role needs table/index/extension privileges, or a DBA must provision them. SQLite/PostgreSQL do not share a distributed transaction: ready metadata publishes after vector writes; crash-orphaned vectors cannot pass metadata checks. Deletion removes vectors before metadata so an outage leaves documents available for retry. Back up both stores.
 
-Enterprise profile context is currently supplied by identity claims plus admin-maintained text. Automated HR/ERP/SharePoint sync, custom business workflow execution, and external data connectors require your source schemas, permissions, and workflow rules and are not implemented yet.
+## Operations and verification
 
-## Operations and limitations
+Run one Node application process. A local mutex serializes ingestion, reindexing, embedding configuration, and deletion. Distributed locks and a durable job queue are not implemented.
 
-This is an MVP foundation, not Open WebUI feature parity. Streaming, multiple chat-model routing, OCR, legacy .doc parsing, repository editing, password/LDAP login, quotas, enterprise audit export, a full PostgreSQL metadata migration, and durable job queues are not included. Chat renders model output as plain text to prevent HTML injection.
-
-SQLite keeps users, settings, documents, repository permissions, and audit entries in the configured database. In local mode it also keeps chat history; when configured, PostgreSQL keeps active chat history and groups. Back up that file consistently and preserve `ENCRYPTION_KEY` separately; losing the key makes saved model credentials unreadable. Protect the data directory with OS permissions and disk encryption: only model API credentials are encrypted at the application layer. Development generates an ignored `data/encryption.key` automatically. Production requires explicit secrets.
-
-Only trusted administrators should configure model URLs: internal network endpoints are intentionally allowed for local inference. Restrict backend egress to approved inference hosts in deployment. Put rate limiting and request concurrency controls at your reverse proxy. Model requests are synchronous with a 120-second read timeout. Review context budgets for your selected model. No hosted deployment or remote Git repository is created.
-
-## Verification
+Current limits include no streaming, multi-model routing, OCR, legacy `.doc`, repository editing, quotas, enterprise audit export, automated connectors, or full PostgreSQL metadata migration. Protect data and backups with OS permissions and disk encryption; only model API credentials are encrypted at the application layer. Model calls time out after 120 seconds. Configure deployment rate/concurrency limits and approved inference-network access.
 
 ```powershell
-.venv/Scripts/python -m pytest -q
-node --check static/app.js
+npm run build
+npm test
+npm run test:browser
+npm audit
+npm run format:check
 ```
 
-Tests use temporary SQLite databases and mocked inference responses. They cover authentication/CSRF, admin permissions, conversation isolation, encrypted credentials, real PDF/DOCX extraction, semantic ranking, page citations, source permissions, vector validation, retry/reindex, legacy migration, and PostgreSQL query scoping.
+Vitest uses temporary databases and mocked inference. It tests access controls, CSRF, legacy/encrypted keys, chat ownership/grouping, deletion during inference, migration, real PDF/DOCX extraction, citations, vector validation, and retry/reindex. OIDC uses locally signed tokens and mocked provider HTTP responses.
 
-Optional live PostgreSQL integration tests (use an isolated test database with pgvector): set `TEST_VECTOR_DATABASE_URL` and run `.venv/Scripts/python -m pytest tests/test_pgvector_integration.py tests/test_chat_postgres_integration.py -q`. Without that variable they are explicitly skipped. The history test checks transactional import, grouping, ownership, namespace isolation, persistence, and deleted-chat import behavior.
+Playwright uses installed Microsoft Edge, an isolated temporary database, and mock inference. It checks React settings, uploads, citations, folders/pins/search, navigation drafts, persistence, and mobile history. Screenshots go to ignored `data/react-workspace.png` and `data/react-mobile.png`. Tests do not change real workspace data.
 
-Optional browser workflow test: install `requirements-dev.txt`, then run `.venv/Scripts/python tests/browser_smoke.py`. It uses a temporary database, a mocked model endpoint, and installed Microsoft Edge in headless mode. It verifies knowledge ingestion/citations plus chat creation, grouping, pinning, search, reload persistence, and the mobile sidebar; screenshots go to ignored `data/browser-smoke/`. It does not change your real workspace data.
-
-Validate live enterprise sign-in and your actual chat/embedding model before rollout.
-
-Protocol references: [Microsoft OIDC](https://learn.microsoft.com/en-us/entra/identity-platform/v2-protocols-oidc) and [vLLM OpenAI-compatible server](https://docs.vllm.ai/en/latest/serving/online_serving/openai_compatible_server/).
+For the two optional live PostgreSQL tests, set `RAAZI_TEST_DATABASE_URL` to an isolated test database with pgvector and run `npm test`. Without it, those tests explicitly skip. Validate your live identity provider and actual inference endpoints before rollout.
