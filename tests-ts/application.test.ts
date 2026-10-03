@@ -857,3 +857,27 @@ it("detects concurrent rewrites when SQLite reuses message IDs", async () => {
   expect(after).toHaveLength(2);
   expect(after[0].content).toBe("Winning edit");
 });
+
+it("keeps composer shades private and independent from accent colors", async () => {
+  expect((await admin.get("/api/session")).body.user.composer_shade).toBe(
+    "mist",
+  );
+  await mutate("put", "/api/preferences", { palette: "ocean" });
+  expect(
+    (await mutate("put", "/api/preferences", { composer_shade: "sky" })).body,
+  ).toEqual({ palette: "ocean", composer_shade: "sky" });
+  await mutate("put", "/api/preferences", { palette: "plum" });
+  expect((await admin.get("/api/session")).body.user.composer_shade).toBe(
+    "sky",
+  );
+  expect(
+    (await mutate("put", "/api/preferences", { composer_shade: "dark" }))
+      .status,
+  ).toBe(400);
+  expect((await mutate("put", "/api/preferences", {})).status).toBe(400);
+  const other = await user("shade-user");
+  expect(
+    (await request(service.app).get("/api/session").set("Cookie", other.cookie))
+      .body.user.composer_shade,
+  ).toBe("mist");
+});

@@ -9,7 +9,7 @@ import { z } from "zod";
 import { LocalDB, Secrets, Failure, Row } from "./db.js";
 import { ObjectStorage, storageSchema, ObjectFactory } from "./storage.js";
 import { Attachments } from "./attachments.js";
-import { paletteIds } from "../shared/palettes.js";
+import { composerShadeIds, paletteIds } from "../shared/palettes.js";
 import type { Attachment } from "../shared/types.js";
 import { History } from "./history.js";
 import {
@@ -77,6 +77,7 @@ const publicUser = (u: Row) =>
       "profile",
       "disabled",
       "palette",
+      "composer_shade",
     ].map((k) => [k, u[k]]),
   );
 export async function createApp(config: Config) {
@@ -229,13 +230,27 @@ export async function createApp(config: Config) {
     });
   });
   app.put("/api/preferences", protect(), (req, res) => {
-    const data = parse(z.object({ palette: z.enum(paletteIds) }).strict(), req);
+    const data = parse(
+      z
+        .object({
+          palette: z.enum(paletteIds).optional(),
+          composer_shade: z.enum(composerShadeIds).optional(),
+        })
+        .strict()
+        .refine(
+          (d) => d.palette !== undefined || d.composer_shade !== undefined,
+          "Choose an appearance setting.",
+        ),
+      req,
+    );
     db.run(
-      "UPDATE users SET palette=? WHERE id=?",
-      data.palette,
+      "UPDATE users SET palette=COALESCE(?,palette),composer_shade=COALESCE(?,composer_shade) WHERE id=?",
+      data.palette ?? null,
+      data.composer_shade ?? null,
       res.locals.user.id,
     );
-    res.json(data);
+    const saved = current(res)!;
+    res.json({ palette: saved.palette, composer_shade: saved.composer_shade });
   });
   app.post("/auth/development", async (_req, res) => {
     if (config.mode !== "development") throw new Failure(404, "Not found");

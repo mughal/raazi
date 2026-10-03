@@ -1428,22 +1428,25 @@ label > select {
 }
 
 .composer {
-  background: #202224;
-  border: 1px solid #34383a;
+  background: var(--composer-bg, #f4f6f8);
+  width: 100%;
+  max-width: 740px;
+  align-self: center;
+  border: 1px solid #dce3e0;
   border-radius: 26px;
   padding: 15px 17px 11px;
   box-shadow: 0 8px 28px #16241e08;
 }
 .composer textarea {
-  color: #f5f7f6;
+  color: #29372f;
   background: transparent;
-  min-height: 72px;
+  min-height: 54px;
   font-size: 14px;
   padding: 6px 3px;
   line-height: 1.6;
 }
 .composer textarea::placeholder {
-  color: #adb3b1;
+  color: #6d7a73;
 }
 .composer-footer {
   align-items: center;
@@ -1452,22 +1455,22 @@ label > select {
 .composer .upload-button {
   border: 0;
   background: transparent;
-  color: #e8ecea;
+  color: #4d6256;
   width: 38px;
   height: 38px;
 }
 .composer .upload-button:hover {
-  background: #33383a;
+  background: #e5ebe7;
 }
 .composer .composer-controls select {
   max-width: 180px;
   background: transparent;
-  color: #c4cdca;
+  color: #56685f;
   border: 0;
 }
 .composer select option {
-  background: #202224;
-  color: #f5f7f6;
+  background: #fff;
+  color: #29372f;
 }
 .composer-right {
   display: flex;
@@ -1491,14 +1494,14 @@ label > select {
   height: 21px;
 }
 .composer .upload-help {
-  color: #9da6a2;
+  color: #69786f;
   font-size: 10px;
   margin: 8px 3px 0;
 }
 .model-details {
   position: relative;
   max-width: 240px;
-  color: #e2e8e4;
+  color: #465d50;
   font-size: 12px;
 }
 .model-details summary {
@@ -1764,4 +1767,56 @@ label > select {
   .composer-right {
     flex-shrink: 0;
   }
+}
+
+[data-composer-shade="mist"] {
+  --composer-bg: #f4f6f8;
+}
+[data-composer-shade="ivory"] {
+  --composer-bg: #faf6ee;
+}
+[data-composer-shade="mint"] {
+  --composer-bg: #f0f7f3;
+}
+[data-composer-shade="sky"] {
+  --composer-bg: #f0f6fc;
+}
+[data-composer-shade="lavender"] {
+  --composer-bg: #f5f2fb;
+}
+.shade-option.selected {
+  background: var(--composer-bg);
+}
+.shade-swatch {
+  width: 32px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #d7dedb;
+  background: var(--composer-bg);
+  flex-shrink: 0;
+}
+.composer-preview {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #dce3e0;
+  border-radius: 20px;
+  background: var(--composer-bg);
+  color: #596d60;
+  font-size: 12px;
+}
+.composer-preview > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 24px;
+}
+.preview-send {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--green);
+  color: #fff;
+  font-size: 18px;
 }

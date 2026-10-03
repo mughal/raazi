@@ -89,7 +89,10 @@ export class LocalDB {
     this.raw.pragma("journal_mode=WAL");
     this.raw.exec(readFileSync(resolve("server/schema.sql"), "utf8"));
     const additions: Record<string, Record<string, string>> = {
-      users: { palette: "TEXT NOT NULL DEFAULT 'forest'" },
+      users: {
+        palette: "TEXT NOT NULL DEFAULT 'forest'",
+        composer_shade: "TEXT NOT NULL DEFAULT 'mist'",
+      },
       settings: {
         supports_images: "INTEGER NOT NULL DEFAULT 0",
         storage_enabled: "INTEGER NOT NULL DEFAULT 0",

@@ -1,6 +1,7 @@
-import type { PaletteId } from "./palettes.js";
+import type { ComposerShadeId, PaletteId } from "./palettes.js";
 export interface User {
   palette: PaletteId;
+  composer_shade: ComposerShadeId;
   id: string;
   name: string;
   email: string;

@@ -34,7 +34,9 @@ Draft text and selected files remain when you change pages. Drafts do not remain
 
 Open **Your profile → Color palette**. Select Forest, Ocean, Indigo, Plum, Amber, or Slate.
 
-Raazi saves the choice to your account. It applies to buttons, links, tabs, and chat accents. The choice remains after reload and sign-in on another browser.
+Choose a **Composer shade**: Mist, Ivory, Mint, Sky, or Lavender. The preview shows its light background. The composer shade is independent from the workspace accent color.
+
+Raazi saves both choices to your account. The workspace palette applies to buttons, links, tabs, and chat accents. The choice remains after reload and sign-in on another browser.
 
 ## Upload a file
 

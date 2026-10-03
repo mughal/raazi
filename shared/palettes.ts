@@ -15,3 +15,23 @@ export const palettes: { id: PaletteId; label: string }[] = [
   { id: "amber", label: "Amber" },
   { id: "slate", label: "Slate" },
 ];
+
+export const composerShadeIds = [
+  "mist",
+  "ivory",
+  "mint",
+  "sky",
+  "lavender",
+] as const;
+export type ComposerShadeId = (typeof composerShadeIds)[number];
+export interface Appearance {
+  palette: PaletteId;
+  composer_shade: ComposerShadeId;
+}
+export const composerShades: { id: ComposerShadeId; label: string }[] = [
+  { id: "mist", label: "Mist" },
+  { id: "ivory", label: "Ivory" },
+  { id: "mint", label: "Mint" },
+  { id: "sky", label: "Sky" },
+  { id: "lavender", label: "Lavender" },
+];

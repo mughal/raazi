@@ -1,28 +1,22 @@
 import { useState } from "react";
-import { palettes, type PaletteId } from "../shared/palettes";
+import { palettes, composerShades, type Appearance } from "../shared/palettes";
 import { api } from "./api";
 export function PaletteSettings({
   palette,
+  composer_shade,
   onSaved,
-}: {
-  palette: PaletteId;
-  onSaved: (palette: PaletteId) => void;
-}) {
-  const [pending, setPending] = useState<PaletteId | null>(null);
-  const selected = pending ?? palette;
-  const [busy, setBusy] = useState(false),
+}: Appearance & { onSaved: (appearance: Appearance) => void }) {
+  const [pending, setPending] = useState<Partial<Appearance> | null>(null),
+    [busy, setBusy] = useState(false),
     [error, setError] = useState("");
-  async function save(value: PaletteId) {
+  const selected = pending?.palette ?? palette,
+    shade = pending?.composer_shade ?? composer_shade;
+  async function save(value: Partial<Appearance>) {
     setPending(value);
     setBusy(true);
     setError("");
     try {
-      const result = await api<{ palette: PaletteId }>(
-        "/api/preferences",
-        "PUT",
-        { palette: value },
-      );
-      onSaved(result.palette);
+      onSaved(await api<Appearance>("/api/preferences", "PUT", value));
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -33,7 +27,10 @@ export function PaletteSettings({
   return (
     <section className="card palette-settings">
       <h3>Color palette</h3>
-      <p>Choose your workspace colors. Your choice follows your account.</p>
+      <p>
+        Choose your workspace colors and a light composer shade. Your choice
+        follows your account.
+      </p>
       <fieldset disabled={busy}>
         <legend>Workspace color palette</legend>
         <div className="palette-grid">
@@ -50,7 +47,7 @@ export function PaletteSettings({
                 name="palette"
                 value={p.id}
                 checked={selected === p.id}
-                onChange={() => void save(p.id)}
+                onChange={() => void save({ palette: p.id })}
               />
               <span className="palette-swatch" aria-hidden="true" />
               <span>{p.label}</span>
@@ -58,6 +55,44 @@ export function PaletteSettings({
           ))}
         </div>
       </fieldset>
+      <fieldset disabled={busy}>
+        <legend>Composer shade</legend>
+        <div className="palette-grid">
+          {composerShades.map((s) => (
+            <label
+              className={
+                "palette-option shade-option " +
+                (shade === s.id ? "selected" : "")
+              }
+              data-composer-shade={s.id}
+              key={s.id}
+            >
+              <input
+                type="radio"
+                name="composer-shade"
+                value={s.id}
+                checked={shade === s.id}
+                onChange={() => void save({ composer_shade: s.id })}
+              />
+              <span className="shade-swatch" aria-hidden="true" />
+              <span>{s.label}</span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div
+        className="composer-preview"
+        data-composer-shade={shade}
+        aria-label="Composer shade preview"
+      >
+        <span>Ask Raazi anything about your work…</span>
+        <div>
+          <span>+</span>
+          <span className="preview-send" aria-hidden="true">
+            ↑
+          </span>
+        </div>
+      </div>
       {busy && <p role="status">Saving colors…</p>}
       {error && (
         <p className="form-error" role="alert">

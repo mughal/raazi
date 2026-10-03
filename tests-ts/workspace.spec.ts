@@ -264,6 +264,25 @@ test("account palettes update the workspace and survive reload", async ({
   }
   await page.getByRole("radio", { name: "Ocean", exact: true }).check();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
+  for (const [name, id] of [
+    ["Mist", "mist"],
+    ["Ivory", "ivory"],
+    ["Mint", "mint"],
+    ["Sky", "sky"],
+    ["Lavender", "lavender"],
+  ]) {
+    await page.getByRole("radio", { name, exact: true }).check();
+    await expect(page.locator("html")).toHaveAttribute(
+      "data-composer-shade",
+      id,
+    );
+    await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
+  }
+  await page.getByRole("radio", { name: "Sky", exact: true }).check();
+  await expect(page.locator("html")).toHaveAttribute(
+    "data-composer-shade",
+    "sky",
+  );
   await page.screenshot({ path: "data/react-palettes.png", fullPage: true });
   await page.reload();
   await page.getByRole("button", { name: "Your profile" }).click();
@@ -285,6 +304,17 @@ test("account palettes update the workspace and survive reload", async ({
   ).toBeChecked();
   await expect(page.locator("html")).toHaveAttribute("data-palette", "ocean");
   await page.unroute("**/api/preferences");
+  await expect(
+    page.getByRole("radio", { name: "Sky", exact: true }),
+  ).toBeChecked();
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await expect(page.locator(".composer")).toHaveCSS(
+    "background-color",
+    "rgb(240, 246, 252)",
+  );
+  expect(
+    (await page.locator(".composer").boundingBox())!.width,
+  ).toBeLessThanOrEqual(740);
   const accent = await page
     .locator("html")
     .evaluate((e) => getComputedStyle(e).getPropertyValue("--green").trim());
