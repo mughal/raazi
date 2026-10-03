@@ -291,3 +291,90 @@ test("account palettes update the workspace and survive reload", async ({
   expect(accent).toBe("#126783");
   expect(errors).toEqual([]);
 });
+
+test("polished composer formats Markdown, copies answers and code, and edits or resends questions", async ({
+  page,
+  context,
+}) => {
+  const errors: string[] = [];
+  page.on("pageerror", (e) => errors.push(e.message));
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page.getByLabel("Message Raazi").fill("Show formatted response");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant h2")).toHaveText(
+    "Professional answer",
+  );
+  await expect(page.locator(".message.assistant strong")).toHaveText("clear");
+  await expect(page.locator(".message.assistant table")).toContainText("Ready");
+  await expect(
+    page.locator(".message.assistant .code-block pre"),
+  ).toContainText("const answer = 42;");
+  expect(
+    await page
+      .locator(".message.assistant script,.message.assistant img")
+      .count(),
+  ).toBe(0);
+  expect(
+    await page.locator(".message.assistant a[href^='javascript:']").count(),
+  ).toBe(0);
+  await page
+    .getByRole("button", { name: "Copy response", exact: true })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain("## Professional answer");
+  await page.getByRole("button", { name: "Copy code", exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toContain("const answer = 42;");
+  await page
+    .getByRole("button", { name: "Edit question", exact: true })
+    .click();
+  await page.getByLabel("Edit question").fill("Revised question");
+  await page.getByRole("button", { name: "Save and resend" }).click();
+  await expect(page.locator(".message.user .text")).toHaveText(
+    "Revised question",
+  );
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+  await page
+    .getByRole("button", { name: "Resend question", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Send message" }),
+  ).toBeDisabled();
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+  await expect(
+    page.getByRole("button", { name: "Resend question", exact: true }),
+  ).toBeEnabled();
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Show formatted response", exact: true })
+    .click();
+  await expect(page.locator(".message.user .text")).toHaveText(
+    "Revised question",
+  );
+  await expect(
+    page.getByText(
+      "AI can provide incorrect information. Check important answers and their sources.",
+    ),
+  ).toBeVisible();
+  await page.getByLabel("Selected model").click();
+  await expect(page.locator(".model-menu")).toContainText("fixture-model");
+  await page.getByLabel("Selected model").click();
+  await page.screenshot({
+    path: "data/react-chat-controls.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({ path: "data/react-chat-mobile.png", fullPage: true });
+  expect(errors).toEqual([]);
+});

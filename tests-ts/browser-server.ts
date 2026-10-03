@@ -12,7 +12,24 @@ const service = await createApp({
   mode: "development",
   secure: false,
   adminGroup: "admins",
-  request: mockRequest,
+  request: async (url, body) => {
+    if (
+      !url.endsWith("/embeddings") &&
+      (body as { messages: { content: unknown }[] }).messages.at(-1)
+        ?.content === "Show formatted response"
+    )
+      return {
+        choices: [
+          {
+            message: {
+              content:
+                "## Professional answer\n\nA **clear** answer with a citation [1].\n\n- First step\n- Second step\n\n| Item | Value |\n| --- | --- |\n| Result | Ready |\n\n```typescript\nconst answer = 42;\n```\n\n[Unsafe link](javascript:alert(1))\n\n<img src=x onerror=alert(1)>\n\n![Remote image](https://image.invalid/private.png)",
+            },
+          },
+        ],
+      };
+    return mockRequest(url, body);
+  },
   objectFactory: memoryStorage().factory,
 });
 const server = service.app.listen(8091, "127.0.0.1");

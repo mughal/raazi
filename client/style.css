@@ -1426,3 +1426,342 @@ label > select {
     gap: 7px;
   }
 }
+
+.composer {
+  background: #202224;
+  border: 1px solid #34383a;
+  border-radius: 26px;
+  padding: 15px 17px 11px;
+  box-shadow: 0 8px 28px #16241e08;
+}
+.composer textarea {
+  color: #f5f7f6;
+  background: transparent;
+  min-height: 72px;
+  font-size: 14px;
+  padding: 6px 3px;
+  line-height: 1.6;
+}
+.composer textarea::placeholder {
+  color: #adb3b1;
+}
+.composer-footer {
+  align-items: center;
+  gap: 12px;
+}
+.composer .upload-button {
+  border: 0;
+  background: transparent;
+  color: #e8ecea;
+  width: 38px;
+  height: 38px;
+}
+.composer .upload-button:hover {
+  background: #33383a;
+}
+.composer .composer-controls select {
+  max-width: 180px;
+  background: transparent;
+  color: #c4cdca;
+  border: 0;
+}
+.composer select option {
+  background: #202224;
+  color: #f5f7f6;
+}
+.composer-right {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  min-width: 0;
+  margin-left: auto;
+}
+.composer .send {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  flex-shrink: 0;
+}
+.composer .send .ui-icon {
+  stroke-width: 2.4;
+  width: 21px;
+  height: 21px;
+}
+.composer .upload-help {
+  color: #9da6a2;
+  font-size: 10px;
+  margin: 8px 3px 0;
+}
+.model-details {
+  position: relative;
+  max-width: 240px;
+  color: #e2e8e4;
+  font-size: 12px;
+}
+.model-details summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  cursor: pointer;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.model-details summary::-webkit-details-marker {
+  display: none;
+}
+.model-details summary .ui-icon {
+  width: 12px;
+  height: 12px;
+  transform: rotate(90deg);
+  flex-shrink: 0;
+}
+.model-menu {
+  position: absolute;
+  bottom: 35px;
+  right: 0;
+  width: 250px;
+  padding: 16px;
+  color: #24282c;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 5px 30px #0002;
+  z-index: 10;
+}
+.model-menu p {
+  font-size: 12px;
+  color: #67736e;
+  line-height: 1.5;
+}
+.model-menu button {
+  font-size: 12px;
+  width: 100%;
+}
+.send-spinner {
+  width: 17px;
+  height: 17px;
+  border: 2px solid #ffffff55;
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: send-spin 0.8s linear infinite;
+}
+@keyframes send-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.message-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-top: 16px;
+}
+.message-tools .text-button {
+  font-size: 11px;
+  color: #64716b;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+}
+.message-tools .ui-icon {
+  width: 14px;
+  height: 14px;
+}
+.message .markdown {
+  white-space: normal;
+  line-height: 1.75;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 12px 0;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  line-height: 1.35;
+  margin: 25px 0 12px;
+}
+.markdown h1 {
+  font-size: 24px;
+}
+.markdown h2 {
+  font-size: 20px;
+}
+.markdown h3 {
+  font-size: 17px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+.markdown li {
+  margin: 5px 0;
+}
+.markdown blockquote {
+  border-left: 3px solid var(--green);
+  margin: 18px 0;
+  padding: 1px 18px;
+  color: #5a6861;
+  background: var(--accent-light);
+}
+.markdown code {
+  font-family: Consolas, "Cascadia Code", monospace;
+  background: var(--accent-soft);
+  padding: 2px 5px;
+  border-radius: 5px;
+  font-size: 0.9em;
+}
+.code-block {
+  border: 1px solid #353c39;
+  border-radius: 14px;
+  overflow: hidden;
+  margin: 18px 0;
+  background: #202724;
+  color: #eaf1ed;
+}
+.code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 14px;
+  background: #2a322e;
+  font-size: 11px;
+  color: #bfcac4;
+}
+.code-toolbar .copy-button {
+  color: #e2ebe6;
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.code-block pre {
+  overflow-x: auto;
+  margin: 0;
+  padding: 18px;
+  line-height: 1.65;
+}
+.code-block code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  white-space: pre;
+  font-size: 12px;
+}
+.table-scroll {
+  overflow-x: auto;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 0;
+}
+.markdown th,
+.markdown td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+.markdown th {
+  background: var(--accent-soft);
+  font-weight: 600;
+}
+.markdown tr:last-child td {
+  border-bottom: 0;
+}
+.question-editor {
+  width: 100%;
+}
+.question-editor textarea {
+  width: 100%;
+  min-height: 120px;
+  resize: vertical;
+  background: #fff;
+  border: 1px solid var(--green);
+  border-radius: 12px;
+  padding: 14px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.question-editor p {
+  font-size: 11px;
+  color: #68766e;
+  line-height: 1.5;
+}
+.composer .attachment-chip {
+  background: #fff;
+}
+@media (max-width: 600px) {
+  .composer {
+    padding: 12px;
+    border-radius: 22px;
+  }
+  .composer .composer-controls select {
+    max-width: 105px;
+    font-size: 10px;
+  }
+  .composer-right {
+    gap: 8px;
+  }
+  .model-details {
+    max-width: 120px;
+    font-size: 10px;
+  }
+  .composer-footer {
+    gap: 4px;
+  }
+  .model-menu {
+    width: 220px;
+  }
+  .message-tools {
+    gap: 12px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .send-spinner {
+    animation: none;
+  }
+}
+
+.model-details summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+@media (max-width: 600px) {
+  .composer-controls {
+    flex: 1;
+    min-width: 0;
+    gap: 4px;
+  }
+  .composer .composer-controls select {
+    min-width: 0;
+    flex: 1;
+    max-width: 95px;
+  }
+  .model-details {
+    max-width: 100px;
+  }
+  .composer .upload-button {
+    width: 32px;
+    flex-shrink: 0;
+  }
+  .composer-right {
+    flex-shrink: 0;
+  }
+}

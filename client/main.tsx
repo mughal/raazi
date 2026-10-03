@@ -10,6 +10,7 @@ import type {
   Attachment,
 } from "../shared/types";
 import { api, setCSRF } from "./api";
+import { MessageView } from "./MessageView";
 import { PaletteSettings } from "./PaletteSettings";
 import { Sidebar } from "./Sidebar";
 import { AttachmentChips, YourFiles } from "./Uploads";
@@ -65,71 +66,6 @@ function SourceView({ id }: { id: string }) {
         <p>Loading source…</p>
       )}
     </div>
-  );
-}
-function Answer({ message }: { message: Message }) {
-  let sources: Source[] = [];
-  try {
-    sources =
-      typeof message.sources === "string"
-        ? JSON.parse(message.sources)
-        : (message.sources ?? []);
-  } catch {
-    /* Old messages without source metadata remain readable. */
-  }
-  let attached: Attachment[] = [];
-  try {
-    const value =
-      typeof message.attachments === "string"
-        ? JSON.parse(message.attachments)
-        : message.attachments;
-    if (Array.isArray(value)) attached = value;
-  } catch {
-    /* Keep older messages readable. */
-  }
-  const safeURL = (s: Source) =>
-    /^\/sources\/[a-f0-9]{32}$/.test(s.url) ? s.url : "#";
-  return (
-    <article className={"message " + message.role}>
-      <div className="author">{message.role === "user" ? "You" : "Raazi"}</div>
-      <AttachmentChips files={attached} />
-      <div className="text">
-        {message.content.split(/(\[\d+\])/).map((part, n) => {
-          const index = /^\[(\d+)\]$/.exec(part),
-            source = index ? sources[Number(index[1]) - 1] : undefined;
-          return source ? (
-            <a
-              className="citation"
-              key={n}
-              href={safeURL(source)}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={source.title + " · " + source.label}
-            >
-              {part}
-            </a>
-          ) : (
-            part
-          );
-        })}
-      </div>
-      {sources.length > 0 && (
-        <div className="sources">
-          Sources · {sources.length}
-          {sources.map((s, n) => (
-            <details key={s.source_id ?? n}>
-              <summary>
-                [{n + 1}] {s.title} · {s.label}
-              </summary>
-              <p>{s.content}</p>
-              <a href={safeURL(s)} target="_blank" rel="noopener noreferrer">
-                View source{s.page ? " · page " + s.page : ""} ↗
-              </a>
-            </details>
-          ))}
-        </div>
-      )}
-    </article>
   );
 }
 function App() {
@@ -287,16 +223,9 @@ function App() {
         repository_id: repository ? Number(repository) : null,
         attachment_ids: submittedFiles.map((f) => f.id),
       });
-      setMessages((m) => [
-        ...m,
-        {
-          role: "user",
-          content: prompt,
-          sources: [],
-          attachments: submittedFiles,
-        },
-        { role: "assistant", content: result.content, sources: result.sources },
-      ]);
+      setMessages(
+        await api<Message[]>("/api/conversations/" + result.conversation_id),
+      );
       setDrafts((d) => ({
         ...d,
         [draftKey]: "",
@@ -310,6 +239,30 @@ function App() {
       setCid(result.conversation_id);
       await refresh();
     });
+  }
+  async function resendQuestion(
+    message: Message,
+    prompt: string,
+  ): Promise<boolean> {
+    if (busy || !cid || !prompt.trim() || message.id == null) return false;
+    let completed = false;
+    await perform(async () => {
+      const attached =
+        typeof message.attachments === "string"
+          ? JSON.parse(message.attachments)
+          : (message.attachments ?? []);
+      await api("/api/chat", "POST", {
+        conversation_id: cid,
+        message: prompt,
+        edit_message_id: String(message.id),
+        repository_id: repository ? Number(repository) : null,
+        attachment_ids: attached.map((f: Attachment) => f.id),
+      });
+      setMessages(await api<Message[]>("/api/conversations/" + cid));
+      await refresh();
+      completed = true;
+    });
+    return completed;
   }
   const sourceId = /^\/sources\/([a-f0-9]{32})$/.exec(location.pathname)?.[1];
   if (!session)
@@ -534,7 +487,12 @@ function App() {
                   </div>
                 )}
                 {messages.map((m, n) => (
-                  <Answer key={n} message={m} />
+                  <MessageView
+                    key={m.id ?? n}
+                    message={m}
+                    busy={busy}
+                    onResend={resendQuestion}
+                  />
                 ))}
                 {busy && (
                   <p className="help" role="status">
@@ -617,17 +575,42 @@ function App() {
                     ))}
                   </select>
                 </div>
-                <button
-                  className="primary send"
-                  aria-label="Send message"
-                  disabled={
-                    busy ||
-                    !draft.trim() ||
-                    files.some((f) => f.status !== "ready")
-                  }
-                >
-                  ↑
-                </button>
+                <div className="composer-right">
+                  <details className="model-details">
+                    <summary aria-label="Selected model">
+                      <span>{workspace.model || "Select a model"}</span>
+                      <Icon name="chevron" />
+                    </summary>
+                    <div className="model-menu">
+                      <strong>
+                        {workspace.model || "No model configured"}
+                      </strong>
+                      <p>
+                        The administrator selects the model for this workspace.
+                      </p>
+                      {session.user.role === "admin" && (
+                        <button type="button" onClick={() => openView("admin")}>
+                          Configure model
+                        </button>
+                      )}
+                    </div>
+                  </details>
+                  <button
+                    className="primary send"
+                    aria-label="Send message"
+                    disabled={
+                      busy ||
+                      !draft.trim() ||
+                      files.some((f) => f.status !== "ready")
+                    }
+                  >
+                    {busy ? (
+                      <span className="send-spinner" aria-hidden="true" />
+                    ) : (
+                      <Icon name="arrow" />
+                    )}
+                  </button>
+                </div>
               </div>
               <p id="upload-help" className="upload-help">
                 {workspace.uploads_enabled
@@ -639,8 +622,8 @@ function App() {
               </p>
             </form>
             <p className="footnote">
-              Raazi can make mistakes. Check the linked sources for important
-              decisions.
+              AI can provide incorrect information. Check important answers and
+              their sources.
             </p>
           </div>
         )}

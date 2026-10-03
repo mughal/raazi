@@ -480,6 +480,10 @@ export async function createApp(config: Config) {
           conversation_id: text(100),
           group_id: identifier.nullable().optional(),
           repository_id: z.number().int().positive().nullable().optional(),
+          edit_message_id: z
+            .string()
+            .regex(/^[1-9][0-9]*$/)
+            .optional(),
           attachment_ids: z
             .array(z.string().regex(/^[a-f0-9]{32}$/))
             .max(5)
@@ -493,9 +497,34 @@ export async function createApp(config: Config) {
       throw new Failure(400, "Ask an admin to configure a local model.");
     if (data.group_id && !data.conversation_id)
       await history.owned(user.id, data.group_id, true);
-    const prior = data.conversation_id
-      ? await history.messages(user.id, data.conversation_id, 20)
-      : [];
+    if (data.edit_message_id && !data.conversation_id)
+      throw new Failure(400, "Select a saved question to edit.");
+    const editVersion = data.edit_message_id
+      ? (await history.owned(user.id, data.conversation_id)).version
+      : undefined;
+    const all =
+      data.edit_message_id && data.conversation_id
+        ? await history.messages(user.id, data.conversation_id)
+        : [];
+    const editIndex = data.edit_message_id
+      ? all.findIndex(
+          (m) => String(m.id) === data.edit_message_id && m.role === "user",
+        )
+      : -1;
+    if (data.edit_message_id && editIndex < 0)
+      throw new Failure(404, "Question not found.");
+    const revision = data.edit_message_id
+      ? {
+          messageId: data.edit_message_id,
+          tailId: String(all.at(-1)!.id),
+          version: editVersion,
+        }
+      : undefined;
+    const prior = data.edit_message_id
+      ? all.slice(0, editIndex).slice(-20)
+      : data.conversation_id
+        ? await history.messages(user.id, data.conversation_id, 20)
+        : [];
     const selectedFiles = attachments.selected(user.id, data.attachment_ids);
     const snapshots = (row: Row): Attachment[] => {
       try {
@@ -587,6 +616,7 @@ export async function createApp(config: Config) {
       sources,
       data.group_id ?? null,
       files,
+      revision,
     );
     res.json({ conversation_id, content: answer, sources, attachments: files });
   });

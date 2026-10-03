@@ -13,6 +13,16 @@ Raazi calls `/chat/completions` with `stream: false`.
 
 Enable **This model accepts image input** only for a vision model. The service must accept OpenAI-compatible `image_url` message parts with base64 data URLs. Test a real image before rollout.
 
+## Test with an OpenAI key
+
+For a cloud test, enter your existing key in **Models → API key**. Raazi encrypts it on the server. Do not put it in frontend code or Git.
+
+Use `https://api.openai.com/v1` as the base URL. Enter a model name available to your project that supports Chat Completions. The selected model must support image input before you enable images.
+
+Raazi uses the key saved in model settings. Setting `OPENAI_API_KEY` on the laptop does not configure Raazi automatically. Local endpoints still work with their own settings.
+
+See the [official OpenAI Chat Completions reference](https://developers.openai.com/api/reference/resources/chat).
+
 ## Configure S3 object storage
 
 Use **Administration → Storage**. Raazi supports an S3-compatible endpoint, including a suitably configured Huawei OceanStor Pacific service.

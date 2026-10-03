@@ -82,6 +82,9 @@ export class History {
         `CREATE TABLE IF NOT EXISTS raazi_chat_groups(namespace TEXT NOT NULL,id TEXT NOT NULL,user_id TEXT NOT NULL,name TEXT NOT NULL,collapsed INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,PRIMARY KEY(namespace,id),UNIQUE(namespace,user_id,id));CREATE TABLE IF NOT EXISTS raazi_chat_conversations(namespace TEXT NOT NULL,id TEXT NOT NULL,user_id TEXT NOT NULL,title TEXT NOT NULL,group_id TEXT,pinned INTEGER NOT NULL DEFAULT 0,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(namespace,id),FOREIGN KEY(namespace,user_id,group_id) REFERENCES raazi_chat_groups(namespace,user_id,id));CREATE TABLE IF NOT EXISTS raazi_chat_messages(id BIGSERIAL PRIMARY KEY,namespace TEXT NOT NULL,conversation_id TEXT NOT NULL,role TEXT NOT NULL,content TEXT NOT NULL,sources TEXT NOT NULL DEFAULT '[]',FOREIGN KEY(namespace,conversation_id) REFERENCES raazi_chat_conversations(namespace,id) ON DELETE CASCADE);CREATE INDEX IF NOT EXISTS raazi_chat_owner_updated ON raazi_chat_conversations(namespace,user_id,updated_at);CREATE INDEX IF NOT EXISTS raazi_chat_message_order ON raazi_chat_messages(namespace,conversation_id,id);CREATE TABLE IF NOT EXISTS raazi_chat_imports(namespace TEXT PRIMARY KEY,imported_at TEXT NOT NULL);`,
       );
       await client!.query(
+        "ALTER TABLE raazi_chat_conversations ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 0",
+      );
+      await client!.query(
         "ALTER TABLE raazi_chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT NOT NULL DEFAULT '[]'",
       );
       if (
@@ -237,11 +240,62 @@ export class History {
     sources: unknown[],
     group: string | null,
     attachments: unknown[] = [],
+    revision?: { messageId: string; tailId: string; version: number },
   ) {
     return this.tx(async (c) => {
       const now = new Date().toISOString();
-      if (id) await this.owned(uid, id, false, c, true);
-      else {
+      if (id) {
+        const conversation = await this.owned(uid, id, false, c, true);
+        if (revision && conversation.version !== revision.version)
+          throw new Failure(
+            409,
+            "This chat changed while generating. Reload it and retry.",
+          );
+        if (revision) {
+          const scope = this.pool
+              ? "namespace=? AND conversation_id=?"
+              : "conversation_id=?",
+            args = this.pool ? [this.namespace, id] : [id];
+          const target = (
+            await this.query(
+              "SELECT * FROM " +
+                this.table("messages") +
+                " WHERE " +
+                scope +
+                " AND id=?",
+              [...args, revision.messageId],
+              c,
+            )
+          )[0];
+          const tail = (
+            await this.query(
+              "SELECT id FROM " +
+                this.table("messages") +
+                " WHERE " +
+                scope +
+                " ORDER BY id DESC LIMIT 1",
+              args,
+              c,
+            )
+          )[0];
+          if (!target || target.role !== "user")
+            throw new Failure(404, "Question not found.");
+          if (String(tail?.id) !== revision.tailId)
+            throw new Failure(
+              409,
+              "This chat changed while generating. Reload it and retry.",
+            );
+          await this.query(
+            "DELETE FROM " +
+              this.table("messages") +
+              " WHERE " +
+              scope +
+              " AND id>=?",
+            [...args, revision.messageId],
+            c,
+          );
+        }
+      } else {
         if (group) await this.owned(uid, group, true, c, true);
         id = randomBytes(18).toString("base64url");
         const keys = [
@@ -293,7 +347,7 @@ export class History {
       }
       const s = this.scope(uid);
       await this.query(
-        `UPDATE ${this.table("conversations")} SET updated_at=? WHERE ${s.sql} AND id=?`,
+        `UPDATE ${this.table("conversations")} SET updated_at=?,version=version+1 WHERE ${s.sql} AND id=?`,
         [now, ...s.args, id],
         c,
       );

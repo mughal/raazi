@@ -114,6 +114,7 @@ export class LocalDB {
       },
       messages: { attachments: "TEXT NOT NULL DEFAULT '[]'" },
       conversations: {
+        version: "INTEGER NOT NULL DEFAULT 0",
         group_id: "TEXT REFERENCES chat_groups(id) ON DELETE SET NULL",
         pinned: "INTEGER NOT NULL DEFAULT 0",
         updated_at: "TEXT NOT NULL DEFAULT ''",

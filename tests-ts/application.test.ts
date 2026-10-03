@@ -713,3 +713,147 @@ it("saves only the current user's palette and validates preferences and CSRF", a
     ).status,
   ).toBe(403);
 });
+
+it("edits and resends questions only after successful inference and preserves prior context", async () => {
+  await configure();
+  const first = await mutate("post", "/api/chat", {
+      message: "First question",
+    }),
+    cid = first.body.conversation_id;
+  await mutate("post", "/api/chat", {
+    conversation_id: cid,
+    message: "Later question",
+  });
+  let saved = (await admin.get("/api/conversations/" + cid)).body,
+    old = saved[0].id;
+  let sent: any;
+  handler = async (url, body) => {
+    sent = body;
+    return mockRequest(url, body);
+  };
+  const edited = await mutate("post", "/api/chat", {
+    conversation_id: cid,
+    message: "Revised first question",
+    edit_message_id: String(old),
+  });
+  expect(edited.status).toBe(200);
+  expect(sent.messages.map((m: any) => m.content).join("\n")).not.toContain(
+    "Later question",
+  );
+  saved = (await admin.get("/api/conversations/" + cid)).body;
+  expect(saved).toHaveLength(2);
+  expect(saved[0].content).toBe("Revised first question");
+  handler = async () => {
+    throw new Error("Model offline");
+  };
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        conversation_id: cid,
+        message: "Failed edit",
+        edit_message_id: String(saved[0].id),
+      })
+    ).status,
+  ).toBe(502);
+  expect((await admin.get("/api/conversations/" + cid)).body).toEqual(saved);
+  handler = mockRequest;
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        conversation_id: cid,
+        message: "Invalid",
+        edit_message_id: String(saved[1].id),
+      })
+    ).status,
+  ).toBe(404);
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "No chat",
+        edit_message_id: "1",
+      })
+    ).status,
+  ).toBe(400);
+  const other = await user("edit-stranger");
+  expect(
+    (
+      await request(service.app)
+        .post("/api/chat")
+        .set("Cookie", other.cookie)
+        .set("X-CSRF-Token", other.csrf)
+        .send({
+          conversation_id: cid,
+          message: "Stolen",
+          edit_message_id: String(saved[0].id),
+        })
+    ).status,
+  ).toBe(404);
+});
+it("rejects an edit when another answer changes the chat during inference", async () => {
+  await configure();
+  const cid = (await mutate("post", "/api/chat", { message: "Original" })).body
+    .conversation_id;
+  const before = (await admin.get("/api/conversations/" + cid)).body;
+  handler = async (url, body) => {
+    await service.history.append(
+      "dev-admin",
+      cid,
+      "Concurrent question",
+      "Concurrent answer",
+      [],
+      null,
+    );
+    return mockRequest(url, body);
+  };
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        conversation_id: cid,
+        message: "Edited",
+        edit_message_id: String(before[0].id),
+      })
+    ).status,
+  ).toBe(409);
+  const after = (await admin.get("/api/conversations/" + cid)).body;
+  expect(after).toHaveLength(4);
+  expect(after[0].content).toBe("Original");
+  expect(after[2].content).toBe("Concurrent question");
+});
+
+it("detects concurrent rewrites when SQLite reuses message IDs", async () => {
+  await configure();
+  const cid = (
+    await mutate("post", "/api/chat", { message: "Original question" })
+  ).body.conversation_id;
+  const saved = (await admin.get("/api/conversations/" + cid)).body;
+  const conversation = await service.history.owned("dev-admin", cid);
+  handler = async (url, body) => {
+    await service.history.append(
+      "dev-admin",
+      cid,
+      "Winning edit",
+      "Winning answer",
+      [],
+      null,
+      [],
+      {
+        messageId: String(saved[0].id),
+        tailId: String(saved.at(-1).id),
+        version: conversation.version,
+      },
+    );
+    return mockRequest(url, body);
+  };
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        conversation_id: cid,
+        message: "Stale edit",
+        edit_message_id: String(saved[0].id),
+      })
+    ).status,
+  ).toBe(409);
+  const after = (await admin.get("/api/conversations/" + cid)).body;
+  expect(after).toHaveLength(2);
+  expect(after[0].content).toBe("Winning edit");
+});

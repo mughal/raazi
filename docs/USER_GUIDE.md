@@ -10,6 +10,16 @@
 
 Raazi uses the local model that your admin configured. It sends your question, recent chat context, profile context, and selected source passages to that model.
 
+## Read and reuse answers
+
+Answers support headings, lists, tables, quotes, and code blocks. Select **Copy response** to copy the original Markdown. Use **Copy code** for a code block.
+
+Use **Edit question** to change a saved question. Select **Save and resend**. After a successful answer, Raazi replaces that question and its later replies. Earlier messages remain. A failed model request leaves the saved chat intact.
+
+Use **Resend question** to ask a saved question again. The same replacement rule applies. If another request changes the chat while the model answers, reload the chat before you retry.
+
+The model menu appears on the right of the composer. An admin selects the available model.
+
 ## Organize chats
 
 Use the history panel on the left. Search by chat title.
