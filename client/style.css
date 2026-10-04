@@ -2022,3 +2022,25 @@ label > select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Keep the original SNGPL mark visible on a blue field; do not recolor it. */
+.sngpl-logo {
+  display: block;
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+  flex-shrink: 0;
+  padding: 2px;
+  background: #086394;
+  border-radius: 12px;
+}
+.login-logo {
+  width: 56px;
+  height: 56px;
+}
+.welcome-logo {
+  width: 72px;
+  height: 72px;
+  margin: 0 auto 24px;
+  border-radius: 18px;
+}

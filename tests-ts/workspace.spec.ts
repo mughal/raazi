@@ -4,9 +4,22 @@ test("composer stays in view on landing and while long demo chats scroll", async
   page,
 }) => {
   await page.goto("/");
+  await expect(
+    page.locator(".login").getByRole("img", { name: "SNGPL", exact: true }),
+  ).toBeVisible();
+  await expect
+    .poll(() =>
+      page
+        .locator(".login img")
+        .evaluate((img: HTMLImageElement) => img.naturalWidth),
+    )
+    .toBeGreaterThan(0);
   await page
     .getByRole("button", { name: "Continue as local administrator" })
     .click();
+  await expect(
+    page.locator(".sidebar").getByRole("img", { name: "SNGPL", exact: true }),
+  ).toBeVisible();
   await expect(page.locator(".demo-notice")).toContainText("sample text only");
   const inView = async () => {
     const box = await page.locator(".composer").boundingBox();

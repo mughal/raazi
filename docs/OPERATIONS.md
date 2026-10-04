@@ -149,4 +149,6 @@ Model requests time out after 120 seconds. S3 requests time out after 30 seconds
 
 Set rate and concurrency limits at deployment. Permit only approved inference and storage network targets.
 
-Raazi does not yet provide quotas, OCR, streaming, multi-model routing, enterprise audit export, automatic connectors, or a full PostgreSQL metadata migration.
+Raazi supports multiple approved chat providers and optional Jev/local decision routing. See the [admin guide](ADMIN_GUIDE.md).
+
+Raazi does not yet provide quotas, OCR, streaming, business-system action execution, enterprise audit export, automatic connectors, or a full PostgreSQL metadata migration.

@@ -132,9 +132,10 @@ export function Sidebar(p: Props) {
               className="workspace-brand"
               onClick={() => p.openView("chat")}
             >
-              <span className="brand-mark">◈</span>Raazi
+              <img className="sngpl-logo" src="/sngpl-logo.png" alt="SNGPL" />
+              Raazi
             </button>
-            <div className="workspace-caption">YOUR ENTERPRISE WORKSPACE</div>
+            <div className="workspace-caption">SNGPL ENTERPRISE WORKSPACE</div>
           </div>
           <button
             className="icon-button"

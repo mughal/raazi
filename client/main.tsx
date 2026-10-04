@@ -292,7 +292,12 @@ function App() {
       <div className="login">
         <div className="card">
           <div className="brand">
-            <span className="logo">◈</span>Raazi <small>ENTERPRISE</small>
+            <img
+              className="sngpl-logo login-logo"
+              src="/sngpl-logo.png"
+              alt="SNGPL"
+            />
+            Raazi <small>ENTERPRISE</small>
           </div>
           <h1>
             Your knowledge.
@@ -464,7 +469,11 @@ function App() {
             >
               {!messages.length ? (
                 <section className="welcome">
-                  <div className="spark">◈</div>
+                  <img
+                    className="sngpl-logo welcome-logo"
+                    src="/sngpl-logo.png"
+                    alt=""
+                  />
                   <div className="eyebrow">CONNECTED TO YOUR WORK</div>
                   <h1>How can I help, {session.user.name.split(" ")[0]}?</h1>
                   <p className="subtitle">
