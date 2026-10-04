@@ -12,7 +12,33 @@ const service = await createApp({
   mode: "development",
   secure: false,
   adminGroup: "admins",
+  getRequest: async (url) =>
+    url.includes("jev.test")
+      ? { models: [{ name: "jev-latest" }] }
+      : { data: [{ id: "small" }, { id: "expert" }] },
   request: async (url, body) => {
+    if (url.endsWith("/systemone")) {
+      const keys = Object.keys((body as any).questions.target.criteria),
+        selected = keys.at(-1)!;
+      return {
+        answers: {
+          action: {
+            type: "choice",
+            choice: "knowledge",
+            confidence: 0.96,
+            probabilities: { direct: 0, knowledge: 1, clarify: 0 },
+          },
+          target: {
+            type: "choice",
+            choice: selected,
+            confidence: 0.95,
+            probabilities: Object.fromEntries(
+              keys.map((k) => [k, k === selected ? 1 : 0]),
+            ),
+          },
+        },
+      };
+    }
     if (
       !url.endsWith("/embeddings") &&
       (body as { messages: { content: unknown }[] }).messages.at(-1)

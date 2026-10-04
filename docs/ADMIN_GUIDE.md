@@ -108,3 +108,38 @@ Huawei describes Pacific object storage as compatible with Amazon S3. Compatibil
 For AWS SDK checksum settings, see the [AWS JavaScript SDK guide](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/s3-checksums.html).
 
 For the writing standard, see [ASD-STE100 Issue 9](https://www.asd-ste100.org/assets/files/ASD-STE100_ISSUE9.pdf).
+
+## Providers and decision routing
+
+Open **Administration → Providers**.
+
+1. Add a provider name and its base URL. Include `/v1` when required.
+2. Select **OpenAI-compatible** for a local or hosted chat engine. Select **TypeSafe Jev** for TypeSafe.
+3. Set **Provider use**. Use **Decision models only** for a local router. TypeSafe is always a decision provider.
+4. Enter a key if required. Keys stay encrypted on the server. A blank field keeps a saved key.
+5. Add approved model names, one per line. Save the provider.
+6. Select **Discover models**. Select the names to approve, then save. Discovery does not enable models by itself.
+7. Enable image input only if every approved chat model in that provider supports it. Split text and image models into separate provider entries if necessary.
+
+The existing **Models** tab remains the default connection. Its model also appears in the user's model menu. You can use providers without configuring this default connection. Users see only enabled, approved chat models. Disabling a provider removes its models from the menu.
+
+To enable routing:
+
+1. Add a TypeSafe or local decision provider and approve its decision model name.
+2. Configure at least one chat model.
+3. Select the decision provider and model under **Decision routing**.
+4. Set the minimum confidence. The default is 0.80.
+5. Choose a default chat model if needed.
+6. Select **Enable decision routing** and save.
+
+TypeSafe's base URL is `https://api.typesafe.ai/v1`. The adapter uses `POST /systemone` with two named choice questions: action and target. See the [TypeSafe API](https://api.typesafe.ai/redoc).
+
+A local decision engine uses `POST /chat/completions` with JSON output. It must return `answers.action` and `answers.target`. Each answer has `type: "choice"`, a permitted `choice`, a `confidence` from 0 to 1, and a probability for every supplied criterion. Probabilities must sum to approximately 1, and the selected choice must have the highest probability. The request includes the exact criteria.
+
+The router can select a chat model, search permitted knowledge, answer directly, or ask for clarification. An explicit repository selection or attached document keeps knowledge retrieval active. Images can route only to image-capable chat models. No tool execution, business workflow action, or external system update is included in this release.
+
+The decision provider receives the question, up to ten recent messages, and filenames. It does not receive image bytes, the enterprise profile, or retrieved document passages. Hosted providers therefore receive this conversation content. Chat providers still receive the context needed to answer.
+
+The lower of the two confidence scores must meet the threshold. Otherwise, Raazi asks for clarification without calling a chat model. A malformed response or service failure stops the request and preserves history. Disable routing before deleting or disabling its decision provider.
+
+Credentials and provider settings remain in the application metadata database. Chat history continues to use PostgreSQL when configured. Provider discovery uses authenticated `GET /models`; enter approved names manually if an engine does not implement discovery.

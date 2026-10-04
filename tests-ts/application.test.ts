@@ -942,3 +942,345 @@ it("persists composer sizes without changing colors or another user's size", asy
       .body.user.composer_size,
   ).toBe("compact");
 });
+
+async function addProvider(
+  name: string,
+  kind: "openai-compatible" | "typesafe",
+  models: string[],
+  purpose = kind === "typesafe" ? "decision" : "chat",
+) {
+  const result = await mutate("post", "/api/admin/providers", {
+    name,
+    kind,
+    models,
+    purpose,
+    base_url: "http://" + name.toLowerCase() + ".test/v1",
+    enabled: true,
+    api_key: "fixture-provider-key",
+  });
+  expect(result.status).toBe(200);
+  return result.body.id as string;
+}
+function decisionReply(action = "knowledge", target = "m0", confidence = 0.95) {
+  return {
+    answers: {
+      action: {
+        type: "choice",
+        choice: action,
+        confidence,
+        probabilities: {
+          direct: action === "direct" ? 1 : 0,
+          knowledge: action === "knowledge" ? 1 : 0,
+          clarify: action === "clarify" ? 1 : 0,
+        },
+      },
+      target: {
+        type: "choice",
+        choice: target,
+        confidence,
+        probabilities: {
+          m0: target === "m0" ? 1 : 0,
+          m1: target === "m1" ? 1 : 0,
+        },
+      },
+    },
+  };
+}
+it("discovers multiple models, exposes only approved models, and keeps provider keys private", async () => {
+  const id = await addProvider("Local", "openai-compatible", [
+    "small",
+    "large",
+  ]);
+  const jev = await addProvider("Jev", "typesafe", ["jev-latest"]);
+  expect((await userGet("/api/admin/providers")).status).toBe(403);
+  const info = (await admin.get("/api/admin/providers")).body;
+  expect(JSON.stringify(info)).not.toContain("fixture-provider-key");
+  expect(
+    service.db.get("SELECT api_key FROM model_providers WHERE id=?", id)!
+      .api_key,
+  ).toMatch(/^v2:/);
+  const workspace = (await admin.get("/api/workspace")).body;
+  expect(workspace.models.map((m: any) => m.label)).toEqual([
+    "Local / small",
+    "Local / large",
+  ]);
+  expect(JSON.stringify(workspace)).not.toContain(".test/v1");
+  expect(workspace.demo_mode).toBe(false);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () =>
+      Response.json({
+        data: [{ id: "small" }, { id: "new-model" }, { id: "small" }],
+      }),
+    ),
+  );
+  const found = await mutate(
+    "post",
+    "/api/admin/providers/" + id + "/discover",
+    {},
+  );
+  expect(found.body.models).toEqual(["new-model", "small"]);
+  expect((await admin.get("/api/workspace")).body.models).toHaveLength(2);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => Response.json({ models: [{ name: "jev-latest" }] })),
+  );
+  expect(
+    (await mutate("post", "/api/admin/providers/" + jev + "/discover", {})).body
+      .models,
+  ).toEqual(["jev-latest"]);
+  const call = vi.fn(mockRequest);
+  handler = call;
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Hello",
+        model_key: workspace.models[1].key,
+      })
+    ).status,
+  ).toBe(200);
+  expect((call.mock.calls[0][1] as any).model).toBe("large");
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Hello",
+        model_key: "unapproved",
+      })
+    ).status,
+  ).toBe(400);
+});
+it("routes through Jev to an approved provider and searches only accessible knowledge", async () => {
+  await configure();
+  const local = await addProvider("Alt", "openai-compatible", ["expert"]);
+  const jev = await addProvider("Jev", "typesafe", ["jev-latest"]);
+  expect(
+    (
+      await mutate("put", "/api/admin/routing", {
+        enabled: true,
+        provider_id: jev,
+        model: "jev-latest",
+        threshold: 0.8,
+      })
+    ).status,
+  ).toBe(200);
+  const rid = await repo();
+  await addDoc(rid);
+  const calls: { url: string; body: any }[] = [];
+  handler = async (url, body, key) => {
+    calls.push({ url, body });
+    if (url.endsWith("/systemone")) return decisionReply("knowledge", "m1");
+    return mockRequest(url, body);
+  };
+  const answer = await mutate("post", "/api/chat", {
+    message: "Annual leave allowance",
+    use_decision: true,
+  });
+  expect(answer.status).toBe(200);
+  expect(answer.body.content).toContain("Decision route: knowledge");
+  expect(answer.body.content).toContain("Alt / expert");
+  expect(answer.body.sources.length).toBeGreaterThan(0);
+  expect(calls[0].url).toBe("http://jev.test/v1/systemone");
+  expect(calls[0].body.questions.target.criteria.m1).toBe("Alt / expert");
+  expect(calls[1].url).toBe("http://alt.test/v1/chat/completions");
+  expect(calls[1].body.model).toBe("expert");
+  expect(
+    (await admin.get("/api/conversations/" + answer.body.conversation_id))
+      .body[1].content,
+  ).toBe(answer.body.content);
+  expect((await mutate("delete", "/api/admin/providers/" + jev)).status).toBe(
+    400,
+  );
+  const denied = await repo(["restricted"]);
+  const count = calls.length;
+  const employee = await user("routing-employee");
+  expect(
+    (
+      await request(service.app)
+        .post("/api/chat")
+        .set("Cookie", employee.cookie)
+        .set("X-CSRF-Token", employee.csrf)
+        .send({
+          message: "Annual leave",
+          use_decision: true,
+          repository_id: denied,
+        })
+    ).status,
+  ).toBe(403);
+  expect(calls).toHaveLength(count);
+  expect(local).toBeTruthy();
+});
+it("low decision confidence asks for clarification; routing errors preserve saved chat", async () => {
+  await configure();
+  await addProvider("Alt", "openai-compatible", ["expert"]);
+  const jev = await addProvider("Jev", "typesafe", ["jev-latest"]);
+  await mutate("put", "/api/admin/routing", {
+    enabled: true,
+    provider_id: jev,
+    model: "jev-latest",
+    threshold: 0.8,
+  });
+  let calls = 0;
+  handler = async () => {
+    calls++;
+    return decisionReply("direct", "m1", 0.6);
+  };
+  const reply = await mutate("post", "/api/chat", {
+    message: "Explain this",
+    use_decision: true,
+  });
+  expect(reply.status).toBe(200);
+  expect(reply.body.content).toContain("not confident enough");
+  expect(calls).toBe(1);
+  const id = reply.body.conversation_id,
+    before = (await admin.get("/api/conversations/" + id)).body;
+  handler = async () => decisionReply("knowledge", "m99");
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Retry",
+        conversation_id: id,
+        use_decision: true,
+        edit_message_id: String(before[0].id),
+      })
+    ).status,
+  ).toBe(502);
+  expect((await admin.get("/api/conversations/" + id)).body).toEqual(before);
+  handler = async () => {
+    throw new Error("Offline");
+  };
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Retry",
+        conversation_id: id,
+        use_decision: true,
+      })
+    ).status,
+  ).toBe(502);
+  expect((await admin.get("/api/conversations/" + id)).body).toEqual(before);
+});
+it("supports a local JSON decision model and honors the switch being off", async () => {
+  await configure();
+  await addProvider("Alt", "openai-compatible", ["expert"]);
+  const decision = await addProvider(
+    "Router",
+    "openai-compatible",
+    ["router-model"],
+    "decision",
+  );
+  await mutate("put", "/api/admin/routing", {
+    enabled: true,
+    provider_id: decision,
+    model: "router-model",
+    threshold: 0.8,
+  });
+  const calls: string[] = [];
+  handler = async (url, body, key) => {
+    calls.push(url);
+    if (url.includes("router.test"))
+      return {
+        choices: [
+          {
+            message: { content: JSON.stringify(decisionReply("direct", "m1")) },
+          },
+        ],
+      };
+    return mockRequest(url, body);
+  };
+  const reply = await mutate("post", "/api/chat", {
+    message: "Hello",
+    use_decision: true,
+  });
+  expect(reply.status).toBe(200);
+  expect(reply.body.sources).toEqual([]);
+  expect(calls).toEqual([
+    "http://router.test/v1/chat/completions",
+    "http://alt.test/v1/chat/completions",
+  ]);
+  calls.length = 0;
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Hello",
+        use_decision: false,
+      })
+    ).status,
+  ).toBe(200);
+  expect(calls).toEqual(["http://model.test/v1/chat/completions"]);
+});
+
+it("routes image chats only to approved vision models and keeps image bytes out of decision state", async () => {
+  await configure();
+  const vision = (
+    await mutate("post", "/api/admin/providers", {
+      name: "Vision",
+      kind: "openai-compatible",
+      base_url: "http://vision.test/v1",
+      models: ["vision"],
+      supports_images: true,
+    })
+  ).body.id;
+  const jev = await addProvider("Jev", "typesafe", ["jev-latest"]);
+  await mutate("put", "/api/admin/routing", {
+    enabled: true,
+    provider_id: jev,
+    model: "jev-latest",
+    threshold: 0.8,
+  });
+  const sharp = (await import("sharp")).default;
+  const image = await sharp({
+    create: { width: 12, height: 12, channels: 3, background: "#008888" },
+  })
+    .png()
+    .toBuffer();
+  const file = await admin
+    .post("/api/attachments")
+    .set("X-CSRF-Token", csrf)
+    .attach("file", image, "diagram.png");
+  expect(file.status).toBe(201);
+  const calls: { url: string; body: any }[] = [];
+  handler = async (url, body) => {
+    calls.push({ url, body });
+    if (url.endsWith("/systemone"))
+      return {
+        answers: {
+          action: {
+            type: "choice",
+            choice: "direct",
+            confidence: 0.9,
+            probabilities: { direct: 1, knowledge: 0, clarify: 0 },
+          },
+          target: {
+            type: "choice",
+            choice: "m0",
+            confidence: 0.9,
+            probabilities: { m0: 1 },
+          },
+        },
+      };
+    return { choices: [{ message: { content: "Image description" } }] };
+  };
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Explain",
+        model_key: "default",
+        attachment_ids: [file.body.id],
+      })
+    ).status,
+  ).toBe(400);
+  expect(calls).toHaveLength(0);
+  const reply = await mutate("post", "/api/chat", {
+    message: "Explain",
+    use_decision: true,
+    attachment_ids: [file.body.id],
+  });
+  expect(reply.status).toBe(200);
+  expect(calls[0].body.questions.target.criteria).toEqual({
+    m0: "Vision / vision",
+  });
+  expect(JSON.stringify(calls[0].body)).not.toContain("base64");
+  expect(calls[1].url).toBe("http://vision.test/v1/chat/completions");
+  expect(calls[1].body.messages.at(-1).content[1].type).toBe("image_url");
+  expect(vision).toBeTruthy();
+});

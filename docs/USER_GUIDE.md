@@ -113,3 +113,13 @@ Raazi does not stream answers. A response appears when the model finishes.
 Document extraction accepts up to 500,000 characters and 500 PDF pages. DOCX extraction excludes images, headers, footers, and text boxes. Mixed PDFs can report pages without readable text.
 
 Check important answers against the source. A citation shows the retrieved evidence. It does not prove that every part of an answer is correct.
+
+## Choose a model and use decisions
+
+Open the model menu on the right of the composer. Choose an approved model from an enabled provider.
+
+Turn on **Use decision model** below the composer to route your next question. The decision model can select a different chat model, request knowledge retrieval, or ask for clarification. The answer shows the route, model, and confidence. The switch starts off after reload.
+
+If the decision is uncertain, add more detail or turn off the switch and choose a model yourself. A decision service failure leaves saved messages intact. **Admin setup required** means routing is not configured.
+
+Demo mode is available in local development only when no chat model is configured. Decision routing needs real configured chat and decision models.

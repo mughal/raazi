@@ -524,3 +524,95 @@ test("composer size controls persist and compact halves the normal height", asyn
   expect(await height()).toBeLessThanOrEqual(85);
   await page.screenshot({ path: "data/react-compact-composer-mobile.png" });
 });
+
+test("admins discover providers and users select models or enable Jev routing", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Providers", exact: true }).click();
+  await page.getByLabel("Provider name", { exact: true }).fill("Local test");
+  await page.getByLabel("Provider base URL").fill("http://provider.test/v1");
+  await page.getByLabel("Approved model names").fill("small");
+  await page.getByRole("button", { name: "Add provider", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Provider saved");
+  await page
+    .getByRole("button", {
+      name: "Discover models for Local test",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("checkbox", { name: "expert", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("checkbox", { name: "expert", exact: true }).check();
+  await page
+    .getByRole("button", { name: "Save provider", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Add provider", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Provider name", { exact: true }).fill("Jev test");
+  await page.getByLabel("Provider protocol").selectOption("typesafe");
+  await page.getByLabel("Provider base URL").fill("http://jev.test/v1");
+  await page.getByLabel("Approved model names").fill("jev-latest");
+  await page.getByRole("button", { name: "Add provider", exact: true }).click();
+  await expect(
+    page.getByRole("button", { name: "Edit Jev test", exact: true }),
+  ).toBeVisible();
+  await page
+    .getByRole("checkbox", { name: "Enable decision routing", exact: true })
+    .check();
+  await page
+    .getByLabel("Decision provider", { exact: true })
+    .selectOption({ label: "Jev test" });
+  await page.getByLabel("Decision model name").fill("jev-latest");
+  await page
+    .getByRole("button", { name: "Save decision routing", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "Decision routing saved",
+  );
+  await page.screenshot({ path: "data/react-providers.png", fullPage: true });
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await expect(
+    page.getByRole("switch", { name: /Use decision model/ }),
+  ).toBeEnabled();
+  await page.getByLabel("Selected model").click();
+  await page
+    .locator(".model-menu")
+    .getByRole("button", { name: "Local test / small", exact: true })
+    .click();
+  await page.getByLabel("Message Raazi").fill("Provider selection check");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+  await expect(page.locator(".message.assistant")).not.toContainText(
+    "Decision route",
+  );
+  await page.getByRole("switch", { name: /Use decision model/ }).check();
+  await page.getByLabel("Message Raazi").fill("Annual leave allowance");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant").last()).toContainText(
+    "Decision route: knowledge",
+  );
+  await expect(page.locator(".message.assistant").last()).toContainText(
+    "Local test / expert",
+  );
+  await expect(page.locator(".message.assistant").last()).toContainText(
+    "confidence 95%",
+  );
+  await page.screenshot({ path: "data/react-routed-chat.png" });
+  await page.reload();
+  await page
+    .getByRole("button", { name: "Provider selection check", exact: true })
+    .click();
+  await expect(page.locator(".message.assistant").last()).toContainText(
+    "Decision route: knowledge",
+  );
+});

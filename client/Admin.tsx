@@ -5,6 +5,7 @@ import type {
   User,
   StorageSettings,
 } from "../shared/types";
+import { ModelProviders } from "./ModelProviders";
 import { StorageForm } from "./StorageForm";
 import { api } from "./api";
 import { Field, Modal } from "./ui";
@@ -71,27 +72,36 @@ export function Admin({ notify, refresh }: Props) {
         </div>
       </div>
       <div className="tabs" role="tablist">
-        {["Models", "Embeddings", "Storage", "Knowledge", "Users", "Audit"].map(
-          (t) => (
-            <button
-              key={t}
-              role="tab"
-              aria-selected={t === tab}
-              className={tab === t ? "active" : ""}
-              onClick={() => {
-                setTab(t);
-                setError("");
-              }}
-            >
-              {t}
-            </button>
-          ),
-        )}
+        {[
+          "Models",
+          "Providers",
+          "Embeddings",
+          "Storage",
+          "Knowledge",
+          "Users",
+          "Audit",
+        ].map((t) => (
+          <button
+            key={t}
+            role="tab"
+            aria-selected={t === tab}
+            className={tab === t ? "active" : ""}
+            onClick={() => {
+              setTab(t);
+              setError("");
+            }}
+          >
+            {t}
+          </button>
+        ))}
       </div>
       {error && (
         <div className="notice" role="alert">
           {error}
         </div>
+      )}
+      {tab === "Providers" && (
+        <ModelProviders notify={notify} refresh={refresh} />
       )}
       {tab === "Storage" && (
         <StorageForm

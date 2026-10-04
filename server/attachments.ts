@@ -18,6 +18,8 @@ export class Attachments {
     public db: LocalDB,
     public storage: ObjectStorage,
     public knowledge: Knowledge,
+    public imagesEnabled: () => boolean = () =>
+      !!knowledge.settings().supports_images,
   ) {
     db.run(
       "UPDATE attachments SET status='failed',error='Processing stopped. Retry this file.' WHERE status='processing'",
@@ -100,7 +102,7 @@ export class Attachments {
         error = "",
         status = "processing";
       if (image) {
-        if (!this.knowledge.settings().supports_images)
+        if (!this.imagesEnabled())
           throw new Failure(
             400,
             "This model does not accept images. Ask an admin to enable an image model.",
@@ -349,7 +351,7 @@ export class Attachments {
           400,
           row.filename + ": Reindex this file in Your files.",
         );
-      if (row.kind === "image" && !this.knowledge.settings().supports_images)
+      if (row.kind === "image" && !this.imagesEnabled())
         throw new Failure(
           400,
           "This model does not accept images. Ask an admin to enable an image model.",

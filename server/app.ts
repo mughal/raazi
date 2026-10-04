@@ -1,4 +1,10 @@
 import { demoAnswer } from "./demo.js";
+import {
+  Routing,
+  providerSchema,
+  routingSchema,
+  type GetJSON,
+} from "./routing.js";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import multer from "multer";
@@ -33,6 +39,7 @@ export interface Config {
   encryptionKey?: string;
   vectorURL?: string;
   chatURL?: string;
+  getRequest?: GetJSON;
   discoveryURL?: string;
   clientId?: string;
   clientSecret?: string;
@@ -117,7 +124,15 @@ export async function createApp(config: Config) {
     key = new TextEncoder().encode(config.secret);
   const storage = new ObjectStorage(db, secrets, config.objectFactory);
   knowledge.storage = storage;
-  const attachments = new Attachments(db, storage, knowledge);
+  const routing = new Routing(
+    db,
+    secrets,
+    config.request ?? requestJSON,
+    config.getRequest,
+  );
+  const attachments = new Attachments(db, storage, knowledge, () =>
+    routing.models().some((m) => m.supports_images),
+  );
   try {
     await history.prepare();
   } catch (error) {
@@ -439,11 +454,12 @@ export async function createApp(config: Config) {
   app.get("/api/workspace", protect(), async (_req, res) =>
     res.json({
       model: knowledge.settings().model,
-      demo_mode:
-        config.mode === "development" &&
-        (!knowledge.settings().base_url || !knowledge.settings().model),
+      demo_mode: config.mode === "development" && !routing.models().length,
+      models: routing.publicModels(),
+      default_model: routing.select()?.key ?? "",
+      routing_enabled: routing.available(),
       uploads_enabled: storage.enabled(),
-      supports_images: !!knowledge.settings().supports_images,
+      supports_images: routing.models().some((m) => m.supports_images),
       repositories: allowed(res.locals.user),
       ...(await history.list(res.locals.user.id)),
     }),
@@ -510,6 +526,8 @@ export async function createApp(config: Config) {
     const data = parse(
         z.object({
           message: text(16000, true),
+          model_key: z.string().max(1000).optional(),
+          use_decision: z.boolean().default(false),
           conversation_id: text(100),
           group_id: identifier.nullable().optional(),
           repository_id: z.number().int().positive().nullable().optional(),
@@ -526,7 +544,13 @@ export async function createApp(config: Config) {
       ),
       s = knowledge.settings(),
       user = res.locals.user;
-    const demo = !s.base_url || !s.model;
+    let target = routing.select(data.model_key);
+    const demo = !target;
+    if (data.use_decision && demo)
+      throw new Failure(
+        400,
+        "Configure chat and decision models before routing.",
+      );
     if (demo && config.mode !== "development")
       throw new Failure(400, "Ask an admin to configure a local model.");
     if (data.group_id && !data.conversation_id)
@@ -604,6 +628,72 @@ export async function createApp(config: Config) {
       });
       return;
     }
+    const hasImages = activeFiles.some((f) => f.kind === "image");
+    let routeNote = "";
+    let routeAction = "knowledge";
+    if (data.use_decision) {
+      const decision = await routing.decide(
+        {
+          question: data.message,
+          recent_messages: prior
+            .slice(-10)
+            .map((r) => ({ role: r.role, content: r.content })),
+          selected_model: target?.label,
+          repository_selected: data.repository_id != null,
+          files: activeFiles.map((f) => ({ name: f.filename, kind: f.kind })),
+        },
+        hasImages,
+      );
+      target = routing.select(decision.target.key);
+      routeAction =
+        decision.action === "direct" &&
+        (data.repository_id != null ||
+          activeFiles.some((f) => f.kind === "document"))
+          ? "knowledge"
+          : decision.action;
+      routeNote =
+        "> Decision route: " +
+        routeAction +
+        " · " +
+        decision.target.label +
+        " · confidence " +
+        Math.round(decision.confidence * 100) +
+        "% · " +
+        decision.engine +
+        "\n\n";
+      if (decision.action === "clarify") {
+        const answer =
+          routeNote +
+          (decision.uncertain
+            ? "The decision model is not confident enough to route this request. Please add more detail, or turn off Use decision model and choose a chat model."
+            : "Please add more detail about your question and the result you need.");
+        if (!current(res))
+          throw new Failure(401, "Your account or session is not active.");
+        const files = selectedFiles.map((f) => attachments.public(f));
+        const conversation_id = await history.append(
+          user.id,
+          data.conversation_id || undefined,
+          data.message,
+          answer,
+          [],
+          data.group_id ?? null,
+          files,
+          revision,
+        );
+        res.json({
+          conversation_id,
+          content: answer,
+          sources: [],
+          attachments: files,
+        });
+        return;
+      }
+    }
+    if (hasImages && !target?.supports_images)
+      throw new Failure(
+        400,
+        "The selected model does not accept images. Choose an image model.",
+      );
     const privateIds = activeFiles
       .filter((f) => f.kind === "document")
       .map((f) => f.id);
@@ -614,7 +704,9 @@ export async function createApp(config: Config) {
     );
     const sources = [
       ...privateSources,
-      ...(await knowledge.retrieve(data.message, repos)),
+      ...(routeAction === "direct"
+        ? []
+        : await knowledge.retrieve(data.message, repos)),
     ].slice(0, 8);
     const context = sources
       .map(
@@ -640,9 +732,9 @@ export async function createApp(config: Config) {
     let answer: string;
     try {
       const response = await (config.request ?? requestJSON)(
-        s.base_url + "/chat/completions",
+        target!.base_url + "/chat/completions",
         {
-          model: s.model,
+          model: target!.model,
           messages: [
             { role: "system", content: system },
             ...prior.map((r) => ({ role: r.role, content: r.content })),
@@ -650,7 +742,7 @@ export async function createApp(config: Config) {
           ],
           stream: false,
         },
-        secrets.open(s.api_key),
+        secrets.open(target!.api_key),
       );
       answer = response.choices[0].message.content;
       if (typeof answer !== "string" || !answer.trim())
@@ -663,6 +755,7 @@ export async function createApp(config: Config) {
     }
     if (!current(res))
       throw new Failure(401, "Your account or session is not active.");
+    answer = routeNote + answer;
     for (const file of selectedFiles) attachments.get(user.id, file.id);
     const files = selectedFiles.map((f) => attachments.public(f));
     const conversation_id = await history.append(
@@ -721,6 +814,39 @@ export async function createApp(config: Config) {
       Number(data.supports_images ?? !!s.supports_images),
     );
     audit(res, "Updated model settings");
+    res.json({ ok: true });
+  });
+  app.get("/api/admin/providers", protect(true), (_req, res) =>
+    res.json({
+      providers: routing.providers(),
+      routing: routing.settings(),
+      models: routing.publicModels(),
+    }),
+  );
+  app.post("/api/admin/providers", protect(true), (req, res) => {
+    const id = routing.saveProvider(undefined, parse(providerSchema, req));
+    audit(res, "Added model provider");
+    res.json({ id });
+  });
+  app.put("/api/admin/providers/:id", protect(true), (req, res) => {
+    routing.saveProvider(String(req.params.id), parse(providerSchema, req));
+    audit(res, "Updated model provider");
+    res.json({ ok: true });
+  });
+  app.delete("/api/admin/providers/:id", protect(true), (req, res) => {
+    routing.remove(String(req.params.id));
+    audit(res, "Deleted model provider");
+    res.json({ ok: true });
+  });
+  app.post(
+    "/api/admin/providers/:id/discover",
+    protect(true),
+    async (req, res) =>
+      res.json({ models: await routing.discover(String(req.params.id)) }),
+  );
+  app.put("/api/admin/routing", protect(true), (req, res) => {
+    routing.saveSettings(parse(routingSchema, req));
+    audit(res, "Updated decision routing");
     res.json({ ok: true });
   });
   const embeddingInfo = () => {

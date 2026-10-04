@@ -50,9 +50,40 @@ export interface Repository {
   description: string;
   groups_json: string;
 }
+export interface ModelOption {
+  key: string;
+  label: string;
+  supports_images: boolean;
+}
+export interface Provider {
+  purpose: "chat" | "decision" | "both";
+  id: string;
+  name: string;
+  kind: "openai-compatible" | "typesafe";
+  base_url: string;
+  models: string[];
+  enabled: boolean;
+  supports_images: boolean;
+  has_api_key: boolean;
+}
+export interface RoutingSettings {
+  enabled: boolean;
+  provider_id: string;
+  model: string;
+  threshold: number;
+  default_model: string;
+}
+export interface ProvidersData {
+  providers: Provider[];
+  routing: RoutingSettings;
+  models: ModelOption[];
+}
 export interface Workspace {
   model: string;
   demo_mode: boolean;
+  models: ModelOption[];
+  default_model: string;
+  routing_enabled: boolean;
   conversations: Chat[];
   groups: Group[];
   repositories: Repository[];
