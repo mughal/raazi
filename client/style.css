@@ -2044,3 +2044,83 @@ label > select {
   margin: 0 auto 24px;
   border-radius: 18px;
 }
+
+/* Fit the landing panel to laptop, tablet, and phone screens. */
+.main-chat .chat-scroll {
+  padding: clamp(12px, 3dvh, 30px)
+    max(clamp(16px, 3vw, 45px), calc((100% - 810px) / 2)) 0;
+}
+.chat-scroll > .welcome {
+  padding: clamp(12px, 4dvh, 42px) 0 clamp(16px, 5dvh, 55px);
+}
+.welcome h1 {
+  font-size: clamp(24px, 3vw, 34px);
+  overflow-wrap: anywhere;
+}
+.composer-dock {
+  padding-inline: clamp(12px, 3vw, 45px);
+}
+@media (max-height: 800px) {
+  .main-chat > .topbar {
+    min-height: 56px;
+  }
+  .chat-scroll .welcome {
+    padding: 12px 0 18px;
+  }
+  .welcome-logo {
+    width: 48px;
+    height: 48px;
+    margin-bottom: 12px;
+    border-radius: 13px;
+  }
+  .welcome h1 {
+    margin: 10px 0;
+  }
+  .welcome .subtitle {
+    margin: 8px auto 16px;
+    line-height: 1.6;
+  }
+  .welcome .suggestions {
+    margin-top: 16px;
+    gap: 8px;
+  }
+  .welcome .suggestion {
+    min-height: 0;
+    padding: 12px;
+  }
+  .welcome .suggestion .icon {
+    display: none;
+  }
+  .composer-dock {
+    padding-top: 8px;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+  .composer-dock .footnote {
+    margin: 8px 0 0;
+  }
+}
+@media (min-width: 761px) and (max-height: 800px) {
+  .welcome .suggestions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 600px) {
+  .chat-scroll .welcome {
+    padding: 12px 0;
+  }
+  .welcome-logo {
+    width: 44px;
+    height: 44px;
+    margin-bottom: 12px;
+  }
+  .welcome .suggestions {
+    margin-top: 12px;
+    gap: 6px;
+  }
+  .welcome .suggestion {
+    padding: 10px 12px;
+  }
+  .welcome .suggestion strong {
+    margin-bottom: 0;
+  }
+}

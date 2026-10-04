@@ -140,3 +140,7 @@ Markdown omits raw HTML, sanitizes links, and does not fetch model-supplied remo
 Use the supplied Dockerfile, production Compose file, environment example, and Nginx TLS example. Run one application replica. Local indexing locks and mutations do not support distributed workers. Keep the metadata volume, PostgreSQL, S3 objects, and encryption key together in backups.
 
 Production deployment, live AD sign-in, Huawei S3 compatibility, and live Jev/model calls remain to be verified in the target environment. No OCR, streaming, quotas, durable indexing queue, automatic enterprise connectors, business action execution, or full PostgreSQL metadata migration is implemented.
+
+## Screen-size support
+
+The chat layout uses the available viewport height. Short laptop screens use a smaller welcome logo, less spacing, and compact suggestion cards. The composer, decision switch, and AI notice stay visible. Messages and overflow welcome content scroll above them. Narrow screens keep the history drawer. Browser checks cover desktop, laptop, tablet, phone, and landscape sizes.

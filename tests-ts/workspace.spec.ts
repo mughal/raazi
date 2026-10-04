@@ -22,7 +22,7 @@ test("composer stays in view on landing and while long demo chats scroll", async
   ).toBeVisible();
   await expect(page.locator(".demo-notice")).toContainText("sample text only");
   const inView = async () => {
-    const box = await page.locator(".composer").boundingBox();
+    const box = await page.locator(".composer-dock").boundingBox();
     expect(box).not.toBeNull();
     expect(box!.y).toBeGreaterThanOrEqual(0);
     expect(box!.y + box!.height).toBeLessThanOrEqual(
@@ -36,11 +36,24 @@ test("composer stays in view on landing and while long demo chats scroll", async
     ).toBe(true);
   };
   for (const viewport of [
-    { width: 1280, height: 720 },
+    { width: 1920, height: 1080 },
+    { width: 1366, height: 600 },
+    { width: 1024, height: 576 },
+    { width: 768, height: 1024 },
     { width: 390, height: 660 },
+    { width: 320, height: 568 },
+    { width: 844, height: 390 },
   ]) {
     await page.setViewportSize(viewport);
     await inView();
+    if (viewport.width >= 1024 && viewport.height >= 576) {
+      const cards = (await page.locator(".suggestions").boundingBox())!;
+      const dock = (await page.locator(".composer-dock").boundingBox())!;
+      expect(cards.y + cards.height).toBeLessThanOrEqual(dock.y);
+    }
+    if (viewport.width === 1366) {
+      await page.screenshot({ path: "data/react-laptop-layout.png" });
+    }
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByLabel("Message Raazi").fill("Demo scrolling test");

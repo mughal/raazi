@@ -148,3 +148,7 @@ Streaming, OCR, quotas, durable background indexing, distributed coordination, a
 Read this file, [ARCHITECTURE.md](ARCHITECTURE.md), and the relevant guide. Inspect `git status` before editing. Preserve the user's data, encryption key, and workspace namespace. Keep the active application in TypeScript. Retain the compact, light, fixed composer and SNGPL identity unless the user asks to change them.
 
 Continue on `dev` unless the user requests another branch. Update these documents when behavior or outstanding work changes.
+
+## Screen-size support
+
+The chat layout uses the available viewport height. Short laptop screens use a smaller welcome logo, less spacing, and compact suggestion cards. The composer, decision switch, and AI notice stay visible. Messages and overflow welcome content scroll above them. Narrow screens keep the history drawer. Browser checks cover desktop, laptop, tablet, phone, and landscape sizes.
