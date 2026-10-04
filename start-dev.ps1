@@ -9,7 +9,17 @@ $env:AUTH_MODE = 'development'
 $env:HOST = '127.0.0.1'
 $env:COOKIE_SECURE = 'false'
 if (-not $env:SECRET_KEY) {
-    $env:SECRET_KEY = & node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
+    $taskSecretBytes = New-Object byte[] 32
+    $taskRandom = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    try {
+        $taskRandom.GetBytes($taskSecretBytes)
+        $env:SECRET_KEY = [System.BitConverter]::ToString($taskSecretBytes).Replace('-', '').ToLowerInvariant()
+    } finally {
+        $taskRandom.Dispose()
+    }
+}
+if ($env:SECRET_KEY.Length -lt 32) {
+    throw 'SECRET_KEY must contain at least 32 characters. Clear the invalid process value or set a valid signing secret.'
 }
 if (-not (Test-Path -LiteralPath 'node_modules')) {
     & npm ci

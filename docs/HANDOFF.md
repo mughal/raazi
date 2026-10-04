@@ -127,6 +127,10 @@ npm run format:check
 
 Browser tests use Microsoft Edge and an isolated fixture service on port 8091. Generated screenshots are ignored under `data/react-*.png`. Set `RAAZI_TEST_DATABASE_URL` only to a disposable pgvector database for live database tests.
 
+## Startup fix
+
+The development launcher generates its temporary signing secret with .NET cryptographic randomness. This avoids Windows PowerShell stripping quotes from a Node inline command. It preserves a valid process signing secret and stops early if a supplied value is too short. It does not change the database encryption key.
+
 ## Next useful work
 
 1. Verify a real chat provider, discovery, and approved model switching.
