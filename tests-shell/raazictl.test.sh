@@ -128,6 +128,8 @@ must_fail ctl logs unrelated
 
 # Compose startup files independently forbid automatic image pulls and builds.
 [[ $(grep -c 'pull_policy: never' "$ROOT/compose.podman.yaml") == 2 ]]
+# podman-compose rejects explicit default references without a network declaration.
+grep -Fx '  default:' "$ROOT/compose.podman.yaml" > /dev/null
 if grep -Eq '^[[:space:]]+build:' "$ROOT/compose.production.yaml" "$ROOT/compose.podman.yaml"; then
   echo 'Runtime Compose files contain a build recipe' >&2; exit 1
 fi

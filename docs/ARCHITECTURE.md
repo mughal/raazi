@@ -141,6 +141,8 @@ Markdown omits raw HTML, sanitizes links, and does not fetch model-supplied remo
 
 Deployment configuration uses tracked `env.sample.qa` and `env.sample.prod` templates. Filled `.env.qa` and `.env.prod` files stay outside Git. The same Compose files serve both environments; `--env-file` selects configuration. Sample project names isolate each environment's named volumes. The supplied systemd unit selects QA.
 
+The Podman overlay declares both the project-scoped `default` bridge and the external inference network. Explicit declaration avoids `podman-compose` rejecting referenced networks during config parsing.
+
 `raazictl` controls Podman deployments, defaulting to QA. Only explicit `prepare` downloads pgvector or builds the application image. Runtime Compose files contain no build recipe, and the Podman overlay forbids image pulls. Start/restart preflight checks local images, the inference network, and configuration. Stop preserves named volumes. Update fast-forwards the current Git upstream without changing services or environment files. Shell contract tests use mocked Podman and Git; Linux behavior still needs target-host verification.
 
 Linux Podman uses `compose.production.yaml` plus `compose.podman.yaml`. Both services join Aigate's external `podnet10` network and the application network. QA selects fixed bridge addresses `.40` for Raazi and `.41` for PostgreSQL; the production sample selects `.42` and `.43`. The addresses are configurable through `RAAZI_APP_IP` and `RAAZI_POSTGRES_IP`. PostgreSQL is reachable on the shared bridge but has no host-published port. Models and S3 remain external services configured in the GUI. `docs/PODMAN.md` describes `/opt/rnd/raazi` setup and the root systemd unit.

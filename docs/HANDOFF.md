@@ -19,7 +19,7 @@ Updated: 5 October 2026. This file is the starting point for work on another PC.
 
 Use the latest `origin/dev` commit. The architecture and guides are committed with the code. Do not rely on the chat transcript to reconstruct decisions.
 
-The first Linux preparation downloaded the combined PostgreSQL/pgvector image successfully. Raazi's build then failed on HTTP Debian metadata with APT `NOSPLIT`. The Dockerfile now uses HTTPS and bootstraps missing CA trust from Node's bundled public roots. The container rebuild still needs verification on Linux; retry with `bash raazictl prepare app` after updating the code.
+The Linux host successfully prepared the PostgreSQL/pgvector image and built `localhost/raazi:local` after the HTTPS source fix. Initial startup then failed during Compose parsing with `missing networks: default`. Unlike Aigate's fully declared shared-network setup, Raazi referenced the application network without a top-level declaration. The Podman overlay now explicitly declares `default` as a bridge. The corrected files passed the actual podman-compose 1.6.0 dry-run config parser with fixture values on this PC. This Compose-only correction needs no image rebuild. Retry startup after updating the code.
 
 Controller contract checks passed with mocked Git and Podman on Windows Git Bash. They cover preflight failures before restart, no implicit build/pull, volume-preserving teardown, clean fast-forward updates, environment selection, and operational values read without shell execution. The symlink check skipped because Git Bash created a copy instead of a real link. Actual Podman provider behavior and the Linux symlink still need host verification.
 
