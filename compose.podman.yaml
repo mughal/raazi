@@ -1,0 +1,11 @@
+# Apply after compose.production.yaml in the same root/rootless Podman context as Aigate.
+services:
+  app:
+    image: localhost/raazi:${RAAZI_IMAGE_TAG:-local}
+    networks:
+      - default
+      - inference
+networks:
+  inference:
+    external: true
+    name: ${INFERENCE_NETWORK:-podnet10}

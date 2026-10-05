@@ -58,11 +58,32 @@ const service = await createApp({
   },
   objectFactory: memoryStorage().factory,
 });
+const portalService = await createApp({
+  database: join(root, "portal.db"),
+  secret: "portal-browser-fixture-secret-more-than-32-characters",
+  encryptionKey: Buffer.alloc(32, 1).toString("base64url"),
+  mode: "portal",
+  secure: false,
+  adminGroup: "admins",
+  portalURL: "https://portal.example.test/api",
+  portalAdmins: ["employee"],
+  portalFetch: async (input, init) => {
+    const body = JSON.parse(init!.body as string);
+    return Response.json({
+      executedSuccessfully: String(input).endsWith("validateUserFromLdap")
+        ? body.username === "employee" && body.password === "fixture-password"
+        : body.employeeNumber === "employee" && body.otp === "123456",
+    });
+  },
+});
+const portalServer = portalService.app.listen(8092, "127.0.0.1");
 const server = service.app.listen(8091, "127.0.0.1");
 for (const signal of ["SIGINT", "SIGTERM"] as const)
   process.on(signal, () =>
     server.close(async () => {
       await service.close();
+      await new Promise<void>((done) => portalServer.close(() => done()));
+      await portalService.close();
       if (resolve(root).startsWith(resolve(tmpdir()) + sep))
         rmSync(root, { recursive: true, force: true });
       process.exit(0);

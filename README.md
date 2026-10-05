@@ -1,6 +1,6 @@
 # Raazi
 
-Raazi is a small enterprise AI workspace. React runs the interface. TypeScript and Node.js run the API. Users sign in through an AD-backed OIDC provider. Admins configure chat providers, approved models, optional decision routing, and embedding models. The interface carries SNGPL branding.
+Raazi is a small enterprise AI workspace. React runs the interface. TypeScript and Node.js run the API. Users sign in through AD-backed OIDC or Portal password and authenticator validation. Admins configure chat providers, approved models, optional decision routing, and embedding models. The interface carries SNGPL branding.
 
 ## Start locally
 
@@ -29,14 +29,15 @@ Use **+** in chat to upload private documents or images. Image questions need a 
 
 ## Read the guides
 
-| Guide                                  | Use                                           |
-| -------------------------------------- | --------------------------------------------- |
-| [Architecture](docs/ARCHITECTURE.md)   | Components, data flows, decisions, and limits |
-| [Handoff](docs/HANDOFF.md)             | Resume on another PC and preserve local data  |
-| [User guide](docs/USER_GUIDE.md)       | Chats, folders, uploads, and citations        |
-| [Admin guide](docs/ADMIN_GUIDE.md)     | Models, S3 storage, embeddings, and access    |
-| [Production guide](docs/PRODUCTION.md) | Production containers, HTTPS, and rollout     |
-| [Operations guide](docs/OPERATIONS.md) | Identity, PostgreSQL, backups, and tests      |
+| Guide                                  | Use                                                                         |
+| -------------------------------------- | --------------------------------------------------------------------------- |
+| [Architecture](docs/ARCHITECTURE.md)   | Components, data flows, decisions, and limits                               |
+| [Handoff](docs/HANDOFF.md)             | Resume on another PC and preserve local data                                |
+| [User guide](docs/USER_GUIDE.md)       | Chats, folders, uploads, and citations                                      |
+| [Admin guide](docs/ADMIN_GUIDE.md)     | Models, S3 storage, embeddings, and access                                  |
+| [Production guide](docs/PRODUCTION.md) | Production containers, HTTPS, and rollout                                   |
+| [Podman guide](docs/PODMAN.md)         | Linux setup in `/opt/rnd/raazi`, Portal OTP, and existing inference engines |
+| [Operations guide](docs/OPERATIONS.md) | Identity, PostgreSQL, backups, and tests                                    |
 
 The guides use short sentences, active voice, and direct instructions. They follow ASD-STE100 principles with some technical terms retained. They are not a certified STE document. The target is approximately 80% adoption of the style.
 

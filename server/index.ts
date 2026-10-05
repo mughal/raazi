@@ -3,7 +3,9 @@ const env = process.env;
 const service = await createApp({
   database: env.DATABASE ?? "data/raazi.db",
   secret: env.SECRET_KEY ?? "",
-  mode: (env.AUTH_MODE ?? "oidc") as "oidc" | "development",
+  mode: (env.AUTH_MODE ?? "oidc") as "oidc" | "development" | "portal",
+  portalURL: env.PORTAL_API_URL,
+  portalAdmins: (env.PORTAL_ADMIN_USERS ?? "").split(","),
   secure: env.COOKIE_SECURE !== "false",
   adminGroup: env.ADMIN_GROUP ?? "raazi-admins",
   encryptionKey: env.ENCRYPTION_KEY,

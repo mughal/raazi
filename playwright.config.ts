@@ -12,7 +12,7 @@ export default defineConfig({
     trace: "retain-on-failure",
   },
   webServer: {
-    command: "npx tsx tests-ts/browser-server.ts",
+    command: `"${process.execPath}" --import tsx tests-ts/browser-server.ts`,
     url: "http://127.0.0.1:8091/api/session",
     reuseExistingServer: false,
     timeout: 60000,

@@ -1,5 +1,32 @@
 import { test, expect } from "@playwright/test";
 import { policyPDF, policyDOCX } from "./fixtures";
+test("Portal sign-in requires password and authenticator before opening the workspace", async ({
+  page,
+}) => {
+  await page.goto("http://127.0.0.1:8092");
+  await expect(
+    page.getByRole("link", { name: "Sign in with your work account" }),
+  ).toHaveCount(0);
+  await page.getByLabel("Portal username").fill("employee");
+  await page.getByLabel("Password", { exact: true }).fill("fixture-password");
+  await page.getByRole("button", { name: "Continue", exact: true }).click();
+  await expect(page.getByLabel("Authenticator code")).toBeVisible();
+  await page.screenshot({ path: "data/react-portal-otp.png", fullPage: true });
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Authenticator code").fill("000000");
+  await page.getByRole("button", { name: "Verify and sign in" }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Invalid authenticator code",
+  );
+  await page.getByLabel("Authenticator code").fill("123456");
+  await page.getByRole("button", { name: "Verify and sign in" }).click();
+  await expect(page.locator(".sidebar")).toBeVisible();
+  await expect(
+    page
+      .locator(".sidebar")
+      .getByRole("button", { name: "Administration", exact: true }),
+  ).toBeVisible();
+});
 test("composer stays in view on landing and while long demo chats scroll", async ({
   page,
 }) => {

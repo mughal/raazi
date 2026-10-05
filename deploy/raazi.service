@@ -1,0 +1,18 @@
+# Root Podman context, matching the existing Aigate deployment.
+[Unit]
+Description=Raazi application and PostgreSQL containers
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/opt/rnd/raazi
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/rnd/raazi
+ExecStart=/usr/bin/podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml up -d --no-build
+ExecStop=/usr/bin/podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml stop
+TimeoutStartSec=300
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

@@ -1,6 +1,6 @@
 # Raazi architecture
 
-Updated: 4 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before continuing development.
+Updated: 5 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before continuing development.
 
 ## Product and scope
 
@@ -136,6 +136,10 @@ Markdown omits raw HTML, sanitizes links, and does not fetch model-supplied remo
 - SNGPL branding is local and works without the external logo portal.
 
 ## Deployment and limits
+
+Linux Podman uses `compose.production.yaml` plus `compose.podman.yaml`. The app joins Aigate's external `podnet10` network; PostgreSQL stays on the private application network. Models and S3 remain external services configured in the GUI. `docs/PODMAN.md` describes `/opt/rnd/raazi` setup and the root systemd unit.
+
+Optional `AUTH_MODE=portal` uses `server/portal-auth.ts` and `client/PortalLogin.tsx` for Portal AD password validation followed by authenticator OTP. Challenges are process-local, session-bound, short-lived, and attempt-limited. Passwords and codes are not persisted. Explicit Portal administrator usernames determine roles. Portal responses do not establish verified group membership; new Portal users have empty groups. OIDC identities and Portal identities remain separate.
 
 Use the supplied Dockerfile, production Compose file, environment example, and Nginx TLS example. Run one application replica. Local indexing locks and mutations do not support distributed workers. Keep the metadata volume, PostgreSQL, S3 objects, and encryption key together in backups.
 

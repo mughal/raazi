@@ -48,7 +48,7 @@ Raazi verifies signed identity claims. It uses authorization code flow, PKCE, st
 
 Use exact group IDs. Group-overage claims are not expanded through Graph. Missing groups grant no restricted or admin access. Logout ends the Raazi session. It does not end provider SSO.
 
-Direct LDAP sign-in and IIS integrated Windows authentication are not implemented.
+Portal mode validates AD credentials through the existing Portal API, then checks an authenticator code. Set `AUTH_MODE=portal`, the HTTPS `PORTAL_API_URL`, and explicit `PORTAL_ADMIN_USERS`. See [PODMAN.md](PODMAN.md) for its permissions and deployment limits. Direct LDAP connections and IIS integrated Windows authentication are not implemented.
 
 ## Start PostgreSQL with pgvector
 

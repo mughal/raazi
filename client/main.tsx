@@ -1,4 +1,5 @@
 import { StrictMode, useEffect, useRef, useState, FormEvent } from "react";
+import { PortalLogin } from "./PortalLogin";
 import { createRoot } from "react-dom/client";
 import type {
   Session,
@@ -323,6 +324,8 @@ function App() {
             >
               Continue as local administrator
             </button>
+          ) : session.auth_mode === "portal" ? (
+            <PortalLogin onLogin={loadSession} />
           ) : (
             <a className="primary" href="/auth/login">
               Sign in with your work account

@@ -1,13 +1,14 @@
 # Development handoff
 
-Updated: 4 October 2026. This file is the starting point for work on another PC.
+Updated: 5 October 2026. This file is the starting point for work on another PC.
 
 ## Current project
 
 - Product: **Raazi**, now with SNGPL branding.
 - Repository: https://github.com/mughal/raazi.git
 - Working branch: `dev`.
-- Current PC checkout: `F:\development\raazi`.
+- Current PC checkout: `D:\Old-F\sngpl\rnd\raazi`.
+- Planned Linux checkout: `/opt/rnd/raazi`, using Podman in the existing Aigate context.
 - Stack: React, TypeScript, Node.js, Express, SQLite, optional PostgreSQL/pgvector, S3-compatible storage.
 - Feature baseline before this branding/documentation change: `f80ea86`.
 - Local preview: http://127.0.0.1:8080. A running preview is not transferred through Git.
@@ -132,6 +133,10 @@ Browser tests use Microsoft Edge and an isolated fixture service on port 8091. G
 The development launcher generates its temporary signing secret with .NET cryptographic randomness. This avoids Windows PowerShell stripping quotes from a Node inline command. It preserves a valid process signing secret and stops early if a supplied value is too short. It does not change the database encryption key.
 
 ## Next useful work
+
+The 5 October setup adds a Podman overlay for the existing `podnet10` network and Portal password plus authenticator sign-in matching Aigate's API contract. Read [PODMAN.md](PODMAN.md). Configure explicit `PORTAL_ADMIN_USERS`; no first-login admin is assigned. Portal validation does not supply verified AD groups. Existing OIDC behavior is retained. Real Portal, local inference, S3, and Podman container checks still require the Linux host. No production deployment or push has been performed from this PC.
+
+Verification for this change: the TypeScript/Vite build passed. All 50 application tests passed; three live PostgreSQL tests skipped. The eight existing Edge workflows passed, and the new Portal password/OTP workflow passed on its focused rerun. Changed files pass formatting checks. The full formatting check flags 38 untouched files in this Windows checkout. Tests used the bundled Node 24 runtime; the PC's default Node 22.1 is below the required 22.12 minimum.
 
 1. Verify a real chat provider, discovery, and approved model switching.
 2. Verify the live Jev adapter with a TypeSafe account/key, or a local decision model with its JSON contract.

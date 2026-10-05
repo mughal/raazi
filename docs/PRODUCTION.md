@@ -1,6 +1,6 @@
 # Production deployment
 
-Use this guide to prepare a single production host. Use a Linux host with Docker Compose and an HTTPS reverse proxy. The application runs one Node process.
+Use this guide to prepare a single production host. Use a Linux host with Docker Compose or Podman and an HTTPS reverse proxy. For the existing Podman inference network and Portal OTP login, follow [PODMAN.md](PODMAN.md). The application runs one Node process.
 
 This repository includes a production Dockerfile, Compose file, environment template, and Nginx example. These are deployment templates. Test them on a staging host before rollout.
 
@@ -47,7 +47,7 @@ postgresql://raazi:<URL-encoded-password>@vectors:5432/raazi_vectors
 
 Use the same password as `POSTGRES_PASSWORD`. URL-encode special characters in the URL. `vectors` is the database service name.
 
-The Compose file forces OIDC sign-in and secure cookies. Do not run `start-dev.ps1` on a production host.
+The Compose file defaults to OIDC sign-in and forces secure cookies. For Portal password plus authenticator sign-in, set `AUTH_MODE=portal` and `PORTAL_ADMIN_USERS`; OIDC variables are then unused. Do not select development mode or run `start-dev.ps1` on a production host.
 
 Secrets are supplied through the process environment. They are not stored in the image. Keep the environment file out of Git. Limit Docker administration to trusted operators.
 

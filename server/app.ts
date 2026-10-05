@@ -1,4 +1,5 @@
 import { demoAnswer } from "./demo.js";
+import { PortalAuth } from "./portal-auth.js";
 import {
   Routing,
   providerSchema,
@@ -33,7 +34,10 @@ import {
 export interface Config {
   database: string;
   secret: string;
-  mode: "development" | "oidc";
+  mode: "development" | "oidc" | "portal";
+  portalURL?: string;
+  portalAdmins?: string[];
+  portalFetch?: typeof fetch;
   secure: boolean;
   adminGroup: string;
   encryptionKey?: string;
@@ -96,8 +100,20 @@ const publicUser = (u: Row) =>
 export async function createApp(config: Config) {
   if (!config.secret || config.secret.length < 32)
     throw new Error("SECRET_KEY must contain at least 32 characters.");
-  if (!["development", "oidc"].includes(config.mode))
-    throw new Error("AUTH_MODE must be oidc or development");
+  if (!["development", "oidc", "portal"].includes(config.mode))
+    throw new Error("AUTH_MODE must be oidc, portal, or development");
+  const portal =
+    config.mode === "portal"
+      ? new PortalAuth(
+          config.portalURL ?? "https://portal.sngpl.com.pk/portalAppsApi",
+          config.portalFetch,
+        )
+      : undefined;
+  const portalAdmins = new Set(
+    (config.portalAdmins ?? [])
+      .map((name) => name.trim().toLowerCase())
+      .filter(Boolean),
+  );
   if (
     config.mode === "oidc" &&
     (!config.discoveryURL?.startsWith("https://") ||
@@ -248,6 +264,7 @@ export async function createApp(config: Config) {
       user: user ? publicUser(user) : null,
       csrf: session.csrf,
       development: config.mode === "development",
+      auth_mode: config.mode,
     });
   });
   app.put("/api/preferences", protect(), (req, res) => {
@@ -293,7 +310,54 @@ export async function createApp(config: Config) {
     res.json({ ok: true });
   });
   app.post("/auth/logout", (_req, res) => {
+    if (portal && typeof _req.cookies.raazi_portal === "string")
+      portal.cancel(_req.cookies.raazi_portal);
+    res.clearCookie("raazi_portal", cookieOptions);
     res.clearCookie("raazi_session", cookieOptions);
+    res.json({ ok: true });
+  });
+
+  app.post("/auth/portal/login", async (req, res) => {
+    if (!portal) throw new Failure(404, "Not found");
+    const data = parse(
+      z.object({
+        username: z.string().max(128),
+        password: z.string().min(1).max(1024),
+      }),
+      req,
+    );
+    if (typeof req.cookies.raazi_portal === "string")
+      portal.cancel(req.cookies.raazi_portal);
+    const challenge = await portal.begin(
+      data.username,
+      data.password,
+      req.ip ?? "unknown",
+      res.locals.session.csrf,
+    );
+    res.cookie("raazi_portal", challenge, { ...cookieOptions, maxAge: 300000 });
+    res.json({ ok: true });
+  });
+  app.post("/auth/portal/otp", async (req, res) => {
+    if (!portal) throw new Failure(404, "Not found");
+    const data = parse(z.object({ code: z.string().max(32) }), req);
+    const username = await portal.finish(
+      req.cookies.raazi_portal ?? "",
+      res.locals.session.csrf,
+      data.code,
+    );
+    res.clearCookie("raazi_portal", cookieOptions);
+    const uid = "portal|" + username;
+    db.run(
+      "INSERT INTO users(id,name,email,role,groups_json) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET role=excluded.role,groups_json=excluded.groups_json",
+      uid,
+      username,
+      "",
+      portalAdmins.has(username) ? "admin" : "user",
+      "[]",
+    );
+    if (!db.get("SELECT id FROM users WHERE id=? AND disabled=0", uid))
+      throw new Failure(403, "Account disabled. Contact an administrator.");
+    await setSession(res, { uid, csrf: token() });
     res.json({ ok: true });
   });
 
@@ -324,7 +388,7 @@ export async function createApp(config: Config) {
         throw error;
       }));
   app.get("/auth/login", async (_req, res) => {
-    if (config.mode === "development") return res.redirect("/");
+    if (config.mode !== "oidc") return res.redirect("/");
     try {
       const m = await metadata(),
         state = token(),
