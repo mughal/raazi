@@ -2,7 +2,9 @@
 
 Use `/opt/rnd/raazi` and the `dev` branch. The active application is React, TypeScript, and Node.js. Run one app container and one PostgreSQL/pgvector container. Use your existing vLLM, embedding server, and S3 service. No inference engine is downloaded or started by this setup.
 
-The overlay joins the app to the external `podnet10` network used by Aigate. PostgreSQL remains on the private application network. Run Podman in the same root or rootless context that owns `podnet10`. The existing Aigate host uses root Podman.
+The overlay joins both services to the external `podnet10` network used by Aigate. Both also share the application network, where the database name is `vectors`. Run Podman in the same root or rootless context that owns `podnet10`. The existing Aigate host uses root Podman.
+
+QA selects `RAAZI_APP_IP=192.168.10.40` and `RAAZI_POSTGRES_IP=192.168.10.41`. The production sample selects `.42` and `.43` on the same subnet. Check the addresses against other running and stopped container configurations before starting. The supplied network snapshot showed Aigate at `.37` and vLLM at `.32`; it did not show these Raazi addresses in use. Existing environment files are not overwritten by `init`, so add these settings manually when upgrading. PostgreSQL now has an address reachable by other containers on `podnet10`; its port is still not published on the host. Keep using `vectors` in the database URL.
 
 ## Prepare configuration
 

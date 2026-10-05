@@ -6,10 +6,15 @@ services:
     env_file:
       - ${RAAZI_ENV_FILE:-.env.qa}
     networks:
-      - default
-      - inference
+      default: {}
+      inference:
+        ipv4_address: ${RAAZI_APP_IP:-192.168.10.40}
   vectors:
     pull_policy: never
+    networks:
+      default: {}
+      inference:
+        ipv4_address: ${RAAZI_POSTGRES_IP:-192.168.10.41}
 networks:
   inference:
     external: true

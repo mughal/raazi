@@ -9,6 +9,7 @@ Updated: 5 October 2026. This file is the starting point for work on another PC.
 - Working branch: `dev`.
 - Current PC checkout: `D:\Old-F\sngpl\rnd\raazi`.
 - Planned Linux checkout: `/opt/rnd/raazi`, using Podman in the existing Aigate context.
+- Fixed `podnet10` QA addresses: Raazi `192.168.10.40`, PostgreSQL `192.168.10.41`. Add `RAAZI_APP_IP` and `RAAZI_POSTGRES_IP` to an existing `.env.qa`; init preserves existing files. Confirm no other container configuration reserves them before starting.
 - Tracked deployment templates: `env.sample.qa` and `env.sample.prod`. Copy to ignored `.env.qa` or `.env.prod`. The supplied systemd unit uses `.env.qa`.
 - Linux controller: `bash raazictl [--env qa|prod] init|update|prepare|start|status|stop|restart|logs`. Only `prepare` builds/downloads images. Update fast-forwards the current upstream; service controls use existing images. Shell contract checks run with `bash tests-shell/raazictl.test.sh`.
 
