@@ -52,6 +52,8 @@ bash raazictl logs app
 
 Only `prepare` builds or downloads images. It pulls pgvector and builds the app. The initial build needs access to the image registry, Debian packages, and npm. Use `prepare app` to rebuild only Raazi or `prepare vectors` to download only PostgreSQL. Imported images can also satisfy startup checks. Preparation does not stop or start services.
 
+The pgvector image already contains PostgreSQL 17; no separate PostgreSQL image is needed. The Node builder uses HTTPS Debian sources with certificate and repository-signature verification. An APT `NOSPLIT` response can indicate a proxy or network login page replacing HTTP metadata. If HTTPS still fails, verify the host's proxy access and organizational CA requirements. Do not disable verification. Retry only the app with `bash raazictl prepare app` after correcting connectivity.
+
 `start` checks both local images, the inference network, and Compose configuration before `up -d --no-build`. The runtime Compose files contain no build recipe; the Podman overlay sets both pull policies to `never`. Missing prerequisites fail without downloading or building. Use a provider that supports pull policies and the health-check dependency.
 
 `stop` uses Compose `down` without removing volumes. `restart` checks prerequisites before taking services down, then brings them up from existing images. The image runs as UID 1000. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.

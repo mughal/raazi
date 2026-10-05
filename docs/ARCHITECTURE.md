@@ -8,6 +8,8 @@ Raazi is an SNGPL-branded enterprise chat and knowledge workspace. The product n
 
 The application uses React and TypeScript in the browser. Express and TypeScript run on Node.js. The earlier Python/Flask implementation is retained in Git history only. Python in the Docker build installs native Node dependencies; it does not run the application.
 
+The image builder fetches Debian packages over HTTPS. If the slim base lacks an APT CA bundle, it seeds one from Node's bundled public roots before installing system CA certificates. TLS and Debian signature verification remain enabled. This avoids HTTP metadata interception but does not authenticate to an organizational proxy.
+
 Users can ask an approved chat model, attach private files, search permitted knowledge repositories, and enable an optional decision model. Admins configure providers, models, embeddings, S3 storage, repository permissions, and user profiles.
 
 ## Components
