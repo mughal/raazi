@@ -1,7 +1,6 @@
 name: raazi-production
 services:
   app:
-    build: .
     image: raazi:${RAAZI_IMAGE_TAG:-local}
     init: true
     environment:

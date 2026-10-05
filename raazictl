@@ -1,0 +1,153 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT=$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)
+cd "$ROOT"
+
+environment=qa
+if [[ ${1:-} == --env ]]; then
+  [[ $# -ge 3 ]] || { echo 'Usage: bash raazictl [--env qa|prod] COMMAND' >&2; exit 2; }
+  environment=$2
+  shift 2
+fi
+[[ $environment == qa || $environment == prod ]] || { echo 'Choose qa or prod.' >&2; exit 2; }
+command=${1:-help}
+[[ $# -eq 0 ]] || shift
+ENV_FILE=".env.$environment"
+export RAAZI_ENV_FILE="$ENV_FILE"
+fail() { echo "$*" >&2; exit 1; }
+no_args() { [[ $# -eq 0 ]] || fail "Unexpected arguments. Run bash raazictl help."; }
+require_tool() { command -v "$1" >/dev/null || fail "Required tool is missing: $1"; }
+
+# Read only operational names as data. Never execute or source the secrets file.
+setting() {
+  awk -v key="$1" '
+    /^[[:space:]]*#/ { next }
+    {
+      line=$0; sub(/\r$/, "", line)
+      if (line ~ "^[[:space:]]*" key "[[:space:]]*=") {
+        sub(/^[^=]*=/, "", line)
+        sub(/^[[:space:]]+/, "", line); sub(/[[:space:]]+$/, "", line)
+        if (line ~ /^".*"$/ || line ~ /^\047.*\047$/) line=substr(line,2,length(line)-2)
+        value=line
+      }
+    }
+    END { print value }
+  ' "$ENV_FILE"
+}
+load_config() {
+  [[ -f $ENV_FILE ]] || fail "Missing $ENV_FILE. Run bash raazictl --env $environment init, then edit it."
+  COMPOSE_PROJECT_NAME=$(setting COMPOSE_PROJECT_NAME)
+  COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME:-raazi-production}
+  RAAZI_IMAGE_TAG=$(setting RAAZI_IMAGE_TAG)
+  RAAZI_IMAGE_TAG=${RAAZI_IMAGE_TAG:-local}
+  INFERENCE_NETWORK=$(setting INFERENCE_NETWORK)
+  INFERENCE_NETWORK=${INFERENCE_NETWORK:-podnet10}
+  [[ $COMPOSE_PROJECT_NAME =~ ^[a-z0-9][a-z0-9_-]*$ ]] || fail 'COMPOSE_PROJECT_NAME must be a literal lowercase project name.'
+  [[ $RAAZI_IMAGE_TAG =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]] || fail 'RAAZI_IMAGE_TAG must be a literal image tag.'
+  [[ $INFERENCE_NETWORK =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]] || fail 'INFERENCE_NETWORK must be a literal network name.'
+  export COMPOSE_PROJECT_NAME RAAZI_IMAGE_TAG INFERENCE_NETWORK
+  APP_IMAGE="localhost/raazi:$RAAZI_IMAGE_TAG"
+  VECTOR_IMAGE=docker.io/pgvector/pgvector:0.8.6-pg17
+}
+compose() {
+  podman compose --env-file "$ENV_FILE" -f compose.production.yaml -f compose.podman.yaml "$@"
+}
+start_checks() {
+  require_tool podman
+  local missing=0
+  for image in "$APP_IMAGE" "$VECTOR_IMAGE"; do
+    if ! podman image exists "$image"; then echo "Missing local image: $image" >&2; missing=1; fi
+  done
+  [[ $missing == 0 ]] || fail 'Run raazictl prepare separately, or import the required images. Nothing was stopped, built, or downloaded.'
+  podman network exists "$INFERENCE_NETWORK" || fail "Missing network: $INFERENCE_NETWORK. Use the same Podman context as Aigate."
+  compose config --quiet
+}
+start_services() { compose up -d --no-build; }
+
+case "$command" in
+  init)
+    no_args "$@"
+    if [[ ! -e $ENV_FILE ]]; then
+      (umask 077; set -o noclobber; cat "env.sample.$environment" > "$ENV_FILE")
+      echo "Created $ENV_FILE. Fill the secrets and Portal administrator username before starting."
+    else
+      echo "Preserved existing $ENV_FILE."
+    fi
+    chmod 600 -- "$ENV_FILE"
+    ;;
+  update)
+    no_args "$@"
+    require_tool git
+    [[ -z $(git status --porcelain) ]] || fail 'Repository has local changes. Resolve them before updating; nothing was stashed or reset.'
+    branch=$(git symbolic-ref --quiet --short HEAD) || fail 'Detached checkout. Select the deployment branch before updating.'
+    upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}') || fail "Branch $branch has no upstream. Set its GitLab tracking branch first."
+    echo "Fast-forwarding $branch from $upstream."
+    git pull --ff-only
+    echo 'Code updated. Services and environment files were not changed. Run prepare separately to rebuild changed application code before restart.'
+    ;;
+  prepare)
+    [[ $# -le 1 ]] || fail 'Usage: bash raazictl prepare [all|app|vectors]'
+    target=${1:-all}
+    [[ $target == all || $target == app || $target == vectors ]] || fail 'Choose all, app, or vectors.'
+    load_config
+    require_tool podman
+    if [[ $target == all || $target == vectors ]]; then podman pull "$VECTOR_IMAGE"; fi
+    if [[ $target == all || $target == app ]]; then
+      require_tool git
+      podman build --label "io.raazi.revision=$(git rev-parse HEAD)" --tag "$APP_IMAGE" --file Dockerfile .
+    fi
+    echo 'Image preparation complete. Services were not started or stopped.'
+    ;;
+  start|restart)
+    no_args "$@"
+    load_config
+    start_checks
+    if [[ $command == restart ]]; then compose down; fi
+    start_services
+    ;;
+  stop)
+    no_args "$@"
+    load_config
+    require_tool podman
+    compose down
+    ;;
+  status)
+    no_args "$@"
+    load_config
+    require_tool podman
+    echo "Raazi $environment — project $COMPOSE_PROJECT_NAME"
+    for service in app vectors; do
+      state=$(podman ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter "label=com.docker.compose.service=$service" --format '{{.Names}}: {{.Status}} ({{.Image}})')
+      if [[ -n $state ]]; then printf '%s\n' "$state"; else echo "$service: no container created"; fi
+    done
+    for image in "$APP_IMAGE" "$VECTOR_IMAGE"; do
+      if podman image exists "$image"; then echo "Image ready: $image"; else echo "Image missing: $image"; fi
+    done
+    ;;
+  logs)
+    [[ $# -le 1 ]] || fail 'Usage: bash raazictl logs [app|vectors]'
+    service=${1:-app}
+    [[ $service == app || $service == vectors ]] || fail 'Choose app or vectors.'
+    load_config
+    require_tool podman
+    compose logs --tail=100 "$service"
+    ;;
+  help|-h|--help)
+    cat <<'HELP'
+Usage: bash raazictl [--env qa|prod] COMMAND
+  init                      Copy a missing sample to .env.qa (or .env.prod).
+  update                    Fast-forward the current branch from its upstream.
+  prepare [all|app|vectors]  Explicitly build the app and/or download pgvector.
+  start                     Start prepared images; no build or download.
+  status                    Show this project's containers and required images.
+  stop                      Compose down; preserve persistent volumes.
+  restart                   Check prerequisites, then down/up existing images.
+  logs [app|vectors]         Show the last 100 service log lines.
+
+QA is the default. Example: bash raazictl --env prod start
+Run from any directory: bash /opt/rnd/raazi/raazictl status
+Update never restarts services. Only prepare builds or downloads images.
+HELP
+    ;;
+  *) fail "Unknown command: $command. Run bash raazictl help." ;;
+esac

@@ -137,6 +137,10 @@ Markdown omits raw HTML, sanitizes links, and does not fetch model-supplied remo
 
 ## Deployment and limits
 
+Deployment configuration uses tracked `env.sample.qa` and `env.sample.prod` templates. Filled `.env.qa` and `.env.prod` files stay outside Git. The same Compose files serve both environments; `--env-file` selects configuration. Sample project names isolate each environment's named volumes. The supplied systemd unit selects QA.
+
+`raazictl` controls Podman deployments, defaulting to QA. Only explicit `prepare` downloads pgvector or builds the application image. Runtime Compose files contain no build recipe, and the Podman overlay forbids image pulls. Start/restart preflight checks local images, the inference network, and configuration. Stop preserves named volumes. Update fast-forwards the current Git upstream without changing services or environment files. Shell contract tests use mocked Podman and Git; Linux behavior still needs target-host verification.
+
 Linux Podman uses `compose.production.yaml` plus `compose.podman.yaml`. The app joins Aigate's external `podnet10` network; PostgreSQL stays on the private application network. Models and S3 remain external services configured in the GUI. `docs/PODMAN.md` describes `/opt/rnd/raazi` setup and the root systemd unit.
 
 Optional `AUTH_MODE=portal` uses `server/portal-auth.ts` and `client/PortalLogin.tsx` for Portal AD password validation followed by authenticator OTP. Challenges are process-local, session-bound, short-lived, and attempt-limited. Passwords and codes are not persisted. Explicit Portal administrator usernames determine roles. Portal responses do not establish verified group membership; new Portal users have empty groups. OIDC identities and Portal identities remain separate.

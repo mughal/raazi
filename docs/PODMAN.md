@@ -16,10 +16,10 @@ git status --short --branch
 git switch dev
 git pull --ff-only origin dev
 podman network inspect podnet10 >/dev/null
-test -e .env.production || (umask 077; cp .env.production.example .env.production)
+bash raazictl init
 ```
 
-Preserve local changes before updating. Do not recreate an existing environment file. Set these values privately in `.env.production`:
+Preserve local changes before updating. Do not recreate an existing environment file. Set these values privately in `.env.qa`:
 
 ```dotenv
 AUTH_MODE=portal
@@ -29,7 +29,7 @@ CONTAINER_LOG_DRIVER=k8s-file
 INFERENCE_NETWORK=podnet10
 ```
 
-Supply `SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, and `PRODUCTION_DATABASE_URL` too. Generate two independent 32-byte base64url values for the signing and encryption keys. Use a strong database password, and URL-encode it in `PRODUCTION_DATABASE_URL`. The database host in that URL is `vectors`. Preserve existing keys when migrating a workspace. The production environment template explains every variable.
+Supply `SECRET_KEY`, `ENCRYPTION_KEY`, `POSTGRES_PASSWORD`, and `PRODUCTION_DATABASE_URL` too. Generate two independent 32-byte base64url values for the signing and encryption keys. Use a strong database password, and URL-encode it in `PRODUCTION_DATABASE_URL`. The database host in that URL is `vectors`. Preserve existing keys when migrating a workspace. The tracked `env.sample.qa` and `env.sample.prod` files contain placeholders. `raazictl init` creates a missing `.env.qa`; `raazictl --env prod init` creates a missing `.env.prod`. Both filled files are ignored by Git. Existing files are preserved. The Compose project names keep QA and production volumes separate; preserve the existing project name when migrating data. Both deployments use port 8080, so they cannot run on the same host port at once.
 
 Portal mode uses the same APIs as Aigate: `validateUserFromLdap`, then `authenticator/validateOtp`. Enter the Portal username, password, and six-digit authenticator code. Both checks must pass. Passwords and OTPs are not stored. Challenges expire after five minutes and permit five code attempts. A process restart clears pending challenges.
 
@@ -37,19 +37,44 @@ Portal validation does not supply verified AD group memberships or profile field
 
 For AD FS or Entra SSO, keep `AUTH_MODE=oidc` and set the OIDC variables instead. Portal password plus OTP is a two-step sign-in, not federated SSO. OIDC remains supported.
 
-## Build and start
+## Control the services
 
-Prepare images before rollout. The initial build needs access to the image registry, Debian packages, and npm. Later startup uses the built image.
+Use `raazictl` to manage the two Raazi services. QA is the default. For production, put `--env prod` before the command. The script selects the environment file and Compose files. The Podman overlay includes the app's `env_file`; the script also supplies the selected file for Compose variable substitution. Operational project, image-tag, and network names must be literal values, optionally quoted. Environment files are read as data and never executed.
 
 ```bash
-podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml config --quiet
-podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml build app
-podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml up -d --no-build
-podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml ps
-podman compose --env-file .env.production -f compose.production.yaml -f compose.podman.yaml logs --tail=100 app
+bash raazictl prepare
+bash raazictl start
+bash raazictl status
+bash raazictl logs app
 ```
 
-Use a Compose provider that supports the health-check dependency. The image runs as UID 1000. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.
+Only `prepare` builds or downloads images. It pulls pgvector and builds the app. The initial build needs access to the image registry, Debian packages, and npm. Use `prepare app` to rebuild only Raazi or `prepare vectors` to download only PostgreSQL. Imported images can also satisfy startup checks. Preparation does not stop or start services.
+
+`start` checks both local images, the inference network, and Compose configuration before `up -d --no-build`. The runtime Compose files contain no build recipe; the Podman overlay sets both pull policies to `never`. Missing prerequisites fail without downloading or building. Use a provider that supports pull policies and the health-check dependency.
+
+`stop` uses Compose `down` without removing volumes. `restart` checks prerequisites before taking services down, then brings them up from existing images. The image runs as UID 1000. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.
+
+For updates:
+
+```bash
+bash raazictl update
+# If application code changed, prepare its image explicitly before restarting.
+bash raazictl prepare app
+bash raazictl restart
+```
+
+`update` uses `git pull --ff-only` on the current branch and upstream. A GitLab clone normally tracks GitLab as `origin`. Dirty, detached, or untracked checkouts stop with a clear message. No reset, stash, environment overwrite, image preparation, or service restart happens during update. Git changes alone do not change the running image.
+
+To use the short command from any directory, install a symlink once:
+
+```bash
+chmod +x /opt/rnd/raazi/raazictl
+ln -s /opt/rnd/raazi/raazictl /usr/local/bin/raazictl
+raazictl status
+raazictl --env prod status
+```
+
+If that link already exists, inspect it instead of replacing it. You can always use `bash /opt/rnd/raazi/raazictl status` without the link.
 
 Set `RAAZI_IMAGE_TAG` to the reviewed release commit. Keep the same Compose project and Podman context when updating, so the volumes remain attached.
 
@@ -73,7 +98,7 @@ systemctl daemon-reload
 systemctl enable --now raazi.service
 ```
 
-The unit starts the existing images from `/opt/rnd/raazi`. It does not build code or restart inference engines. It requires the external network to exist. A rootless installation needs a user unit and the matching user's Podman storage; do not use this root unit for it.
+The unit uses `raazictl start` and `raazictl stop`, selecting `.env.qa`. For production, add `--env prod` before `start` and `stop` in the installed unit. The unit starts the existing images from `/opt/rnd/raazi`. It does not build code or restart inference engines. It requires the external network to exist. A rootless installation needs a user unit and the matching user's Podman storage; do not use this root unit for it.
 
 ## Verify on the server
 

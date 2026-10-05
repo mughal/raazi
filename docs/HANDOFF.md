@@ -9,11 +9,16 @@ Updated: 5 October 2026. This file is the starting point for work on another PC.
 - Working branch: `dev`.
 - Current PC checkout: `D:\Old-F\sngpl\rnd\raazi`.
 - Planned Linux checkout: `/opt/rnd/raazi`, using Podman in the existing Aigate context.
+- Tracked deployment templates: `env.sample.qa` and `env.sample.prod`. Copy to ignored `.env.qa` or `.env.prod`. The supplied systemd unit uses `.env.qa`.
+- Linux controller: `bash raazictl [--env qa|prod] init|update|prepare|start|status|stop|restart|logs`. Only `prepare` builds/downloads images. Update fast-forwards the current upstream; service controls use existing images. Shell contract checks run with `bash tests-shell/raazictl.test.sh`.
+
 - Stack: React, TypeScript, Node.js, Express, SQLite, optional PostgreSQL/pgvector, S3-compatible storage.
 - Feature baseline before this branding/documentation change: `f80ea86`.
 - Local preview: http://127.0.0.1:8080. A running preview is not transferred through Git.
 
 Use the latest `origin/dev` commit. The architecture and guides are committed with the code. Do not rely on the chat transcript to reconstruct decisions.
+
+Controller contract checks passed with mocked Git and Podman on Windows Git Bash. They cover preflight failures before restart, no implicit build/pull, volume-preserving teardown, clean fast-forward updates, environment selection, and operational values read without shell execution. The symlink check skipped because Git Bash created a copy instead of a real link. Actual Podman provider behavior and the Linux symlink still need host verification.
 
 ## What has been built
 

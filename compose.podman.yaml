@@ -2,9 +2,14 @@
 services:
   app:
     image: localhost/raazi:${RAAZI_IMAGE_TAG:-local}
+    pull_policy: never
+    env_file:
+      - ${RAAZI_ENV_FILE:-.env.qa}
     networks:
       - default
       - inference
+  vectors:
+    pull_policy: never
 networks:
   inference:
     external: true

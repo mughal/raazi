@@ -1,0 +1,4 @@
+# Apply only for explicit image preparation. Normal startup has no build recipe.
+services:
+  app:
+    build: .

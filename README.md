@@ -17,6 +17,10 @@ For automatic reload, run `./start-dev.ps1 -Watch`. Open port 5173.
 
 ## Configure Raazi
 
+For Linux QA, copy `env.sample.qa` to `.env.qa` and fill its settings. For production, copy `env.sample.prod` to `.env.prod`. The sample files belong in Git; the filled files are ignored. See the Podman guide for startup commands.
+
+Use `bash raazictl init`, then edit the environment file. Run `bash raazictl prepare` explicitly to build/download images. Normal controls are `start`, `status`, `stop`, `restart`, and `update`; none build or download images. `update` fast-forwards the current Git upstream without restarting services. Use `--env prod` before the command for production.
+
 1. Open **Administration → Models**. Set the local model URL and name.
 2. Open **Storage**. Set your S3-compatible endpoint, bucket, and keys.
 3. Select **Test bucket**. Then select **Save storage settings**.

@@ -30,7 +30,7 @@ Direct LDAP sign-in and integrated Windows authentication are not available. See
 
 1. Clone the repository on the host.
 2. Select a reviewed release commit.
-3. Copy `.env.production.example` to `.env.production`.
+3. Copy `env.sample.prod` to `.env.prod`.
 4. Fill every required value.
 5. Restrict file access to the deployment account.
 6. Set `RAAZI_IMAGE_TAG` to the release commit.
@@ -56,13 +56,18 @@ Secrets are supplied through the process environment. They are not stored in the
 Run these commands from the repository root:
 
 ```bash
-docker compose --env-file .env.production -f compose.production.yaml config --quiet
-docker compose --env-file .env.production -f compose.production.yaml up -d --build
-docker compose --env-file .env.production -f compose.production.yaml ps
-docker compose --env-file .env.production -f compose.production.yaml logs --tail=100 app
+docker compose --env-file .env.prod -f compose.production.yaml config --quiet
+# Prepare images explicitly before starting services.
+docker compose --env-file .env.prod -f compose.production.yaml -f compose.build.yaml build app
+docker compose --env-file .env.prod -f compose.production.yaml pull vectors
+docker compose --env-file .env.prod -f compose.production.yaml up -d --no-build --pull never
+docker compose --env-file .env.prod -f compose.production.yaml ps
+docker compose --env-file .env.prod -f compose.production.yaml logs --tail=100 app
 ```
 
 The app runs as the Node user. Named volumes keep SQLite and PostgreSQL data. Container replacement does not remove these volumes.
+
+For Podman, use `bash raazictl prepare` and then `bash raazictl start`. QA is the default; production uses `bash raazictl --env prod start`. See the Podman guide for updates, status, stop, and restart.
 
 The HTTP health check tests the app response. It does not test the identity provider, models, S3 bucket, or all database operations.
 
