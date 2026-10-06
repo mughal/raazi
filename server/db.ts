@@ -108,6 +108,9 @@ export class LocalDB {
         vector_namespace: "TEXT NOT NULL DEFAULT ''",
       },
       documents: {
+        index_stage: "TEXT NOT NULL DEFAULT ''",
+        index_completed: "INTEGER NOT NULL DEFAULT 0",
+        index_total: "INTEGER NOT NULL DEFAULT 0",
         object_ref: "TEXT",
         filename: "TEXT NOT NULL DEFAULT ''",
         mime: "TEXT NOT NULL DEFAULT 'text/plain'",

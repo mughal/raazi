@@ -137,6 +137,9 @@ export interface EmbeddingSettings {
   enabled: boolean;
 }
 export interface KnowledgeDocument {
+  index_stage: string;
+  index_completed: number;
+  index_total: number;
   id: number;
   repo_id: number;
   title: string;

@@ -1,6 +1,7 @@
 import { useState, useEffect, FormEvent } from "react";
 import type {
   AdminData,
+  KnowledgeDocument,
   EmbeddingSettings,
   User,
   StorageSettings,
@@ -47,6 +48,21 @@ export function Admin({
   useEffect(() => {
     load().catch((e) => setError(e.message));
   }, []);
+  useEffect(() => {
+    if (tab !== "Knowledge" && tab !== "Embeddings") return;
+    const timer = setInterval(() => {
+      void api<{ documents: KnowledgeDocument[] }>(
+        "/api/admin/documents/status",
+      )
+        .then((result) =>
+          setData((current) =>
+            current ? { ...current, documents: result.documents } : current,
+          ),
+        )
+        .catch(() => {});
+    }, 1500);
+    return () => clearInterval(timer);
+  }, [tab]);
   async function submit(action: () => Promise<unknown>, message: string) {
     setBusy(true);
     setError("");
@@ -115,6 +131,16 @@ export function Admin({
           {error}
         </div>
       )}
+      {(tab === "Knowledge" || tab === "Embeddings") &&
+        data.documents.some((d) => d.status === "needs_reindex") && (
+          <p className="notice" role="status">
+            Knowledge is stale:{" "}
+            {data.documents.filter((d) => d.status === "needs_reindex").length}{" "}
+            document(s) need reindexing for the current search settings. Open
+            Knowledge and select Reindex for each document. Stale documents are
+            excluded from answers.
+          </p>
+        )}
       {tab === "Platform" && (
         <form
           key={platformName}
@@ -447,6 +473,12 @@ export function Admin({
               }}
             >
               <h3>Upload a document</h3>
+              {busy && (
+                <p className="help">
+                  Processing request… New documents will show indexing progress
+                  below after text extraction and storage finish.
+                </p>
+              )}
               <Field label="Upload repository">
                 <select name="repository_id" required>
                   <option value="">Select a repository</option>
@@ -575,9 +607,29 @@ export function Admin({
                     {data.repositories.find((r) => r.id === d.repo_id)?.name} ·{" "}
                     {d.size.toLocaleString()} characters ·{" "}
                     <span className="index-status">
-                      {d.status.replaceAll("_", " ")}
+                      {d.status === "needs_reindex"
+                        ? "Stale — reindex required"
+                        : d.status.replaceAll("_", " ")}
                     </span>
                   </small>
+                  {d.status === "processing" && (
+                    <div role="status" className="index-progress">
+                      <small>
+                        {d.index_stage || "Processing"}
+                        {d.index_total > 0 &&
+                        d.index_stage === "Creating embeddings"
+                          ? ` · ${d.index_completed} of ${d.index_total} sections`
+                          : ""}
+                      </small>
+                      <progress
+                        aria-label={"Indexing " + d.title}
+                        {...(d.index_stage === "Creating embeddings" &&
+                        d.index_total > 0
+                          ? { max: d.index_total, value: d.index_completed }
+                          : {})}
+                      />
+                    </div>
+                  )}
                   {d.warning && <small>{d.warning}</small>}
                   {d.error && <small className="index-error">{d.error}</small>}
                 </div>
@@ -585,14 +637,30 @@ export function Admin({
                   <button
                     disabled={busy}
                     onClick={() =>
-                      void submit(
-                        () =>
-                          api(
-                            "/api/admin/documents/" + d.id + "/reindex",
-                            "POST",
-                          ),
-                        "Document reindexed",
-                      )
+                      void submit(async () => {
+                        setData((current) =>
+                          current
+                            ? {
+                                ...current,
+                                documents: current.documents.map((doc) =>
+                                  doc.id === d.id
+                                    ? {
+                                        ...doc,
+                                        status: "processing",
+                                        index_stage: "Waiting to start",
+                                        index_completed: 0,
+                                        index_total: 0,
+                                      }
+                                    : doc,
+                                ),
+                              }
+                            : current,
+                        );
+                        await api(
+                          "/api/admin/documents/" + d.id + "/reindex",
+                          "POST",
+                        );
+                      }, "Document reindexed")
                     }
                   >
                     {d.status === "failed" ? "Retry" : "Reindex"}

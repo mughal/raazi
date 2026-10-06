@@ -235,6 +235,7 @@ export async function embeddings(
   secrets: Secrets,
   texts: string[],
   request: RequestJSON = requestJSON,
+  onProgress?: (completed: number, total: number) => void,
 ) {
   const vectors: number[][] = [];
   try {
@@ -265,6 +266,7 @@ export async function embeddings(
         if (!norm || !Number.isFinite(norm)) throw new Error("Invalid norm");
         vectors.push(item.embedding.map((x: number) => x / norm));
       }
+      onProgress?.(vectors.length, texts.length);
     }
     return vectors;
   } catch {
@@ -346,7 +348,7 @@ export class Knowledge {
     const doc = this.db.get("SELECT * FROM documents WHERE id=?", id);
     if (!doc) throw new Failure(404, "Document not found");
     this.db.run(
-      "UPDATE documents SET status='processing',error='' WHERE id=?",
+      "UPDATE documents SET status='processing',error='',index_stage='Preparing text',index_completed=0,index_total=0 WHERE id=?",
       id,
     );
     try {
@@ -367,14 +369,31 @@ export class Knowledge {
           available.splice(index, 1);
         }
       }
+      this.db.run(
+        "UPDATE documents SET index_stage=?,index_total=? WHERE id=?",
+        s.embedding_url ? "Creating embeddings" : "Building text index",
+        chunks.length,
+        id,
+      );
       const vectors = s.embedding_url
         ? await embeddings(
             s,
             this.secrets,
             chunks.map((c) => c.content),
             this.request,
+            (completed, total) =>
+              this.db.run(
+                "UPDATE documents SET index_completed=?,index_total=? WHERE id=?",
+                completed,
+                total,
+                id,
+              ),
           )
         : [];
+      this.db.run(
+        "UPDATE documents SET index_stage='Saving index' WHERE id=?",
+        id,
+      );
       if (vectors.length && this.pool) {
         await this.prepare(s.embedding_dimensions);
         const client = await this.pool.connect();
@@ -421,7 +440,7 @@ export class Knowledge {
           );
         }
         this.db.run(
-          "UPDATE documents SET status='ready',indexed_signature=?,index_backend=?,error='' WHERE id=?",
+          "UPDATE documents SET status='ready',indexed_signature=?,index_backend=?,error='',index_stage='Ready',index_completed=index_total WHERE id=?",
           sig,
           vectors.length && this.pool ? "postgres" : "local",
           id,
@@ -513,7 +532,7 @@ export class Knowledge {
       url: "/sources/" + row.id,
     };
   }
-  async retrieve(prompt: string, repos: number[]) {
+  async retrieve(prompt: string, repos: number[], minScore = -1) {
     if (!repos.length) return [];
     const s = this.settings(),
       sig = signature(s),
@@ -545,7 +564,7 @@ export class Knowledge {
           await client.query("COMMIT");
           const byId = new Map(currentRows().map((r) => [r.id, r]));
           selected = found.rows
-            .filter((r) => byId.has(r.id))
+            .filter((r) => byId.has(r.id) && Number(r.score) >= minScore)
             .slice(0, 5)
             .map((r) => byId.get(r.id)!);
         } catch (e) {
@@ -564,6 +583,7 @@ export class Knowledge {
               0,
             ),
           }))
+          .filter((r) => r.score >= minScore)
           .sort((a, b) => b.score - a.score)
           .slice(0, 5);
     } else {
@@ -588,7 +608,7 @@ export class Knowledge {
   }
   documents() {
     return this.db.all(
-      "SELECT id,repo_id,title,length(content) AS size,status,error,warning FROM documents ORDER BY id DESC",
+      "SELECT id,repo_id,title,length(content) AS size,status,error,warning,index_stage,index_completed,index_total FROM documents ORDER BY id DESC",
     );
   }
   async close() {

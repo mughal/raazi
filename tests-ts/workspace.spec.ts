@@ -926,3 +926,77 @@ test("model connection can be checked without saving", async ({ page }) => {
     ),
   ).toBeVisible();
 });
+
+test("knowledge shows live section progress and stale reindex notice", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const admin = await (await page.request.get("/api/admin")).json();
+  expect(admin.documents.length).toBeGreaterThan(0);
+  let status = "processing";
+  await page.route("**/api/admin/documents/status", (route) =>
+    route.fulfill({
+      json: {
+        documents: admin.documents.map((d: any, n: number) =>
+          n
+            ? d
+            : {
+                ...d,
+                status,
+                index_stage: "Creating embeddings",
+                index_completed: 32,
+                index_total: 64,
+              },
+        ),
+      },
+    }),
+  );
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Knowledge", exact: true }).click();
+  await expect(
+    page.getByText("Creating embeddings · 32 of 64 sections"),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("progressbar", {
+      name: "Indexing " + admin.documents[0].title,
+    }),
+  ).toHaveAttribute("value", "32");
+  status = "needs_reindex";
+  await expect(page.getByText(/Knowledge is stale:/)).toBeVisible();
+  await expect(
+    page.getByText("Stale — reindex required", { exact: true }),
+  ).toBeVisible();
+  status = "ready";
+  await expect(page.getByText(/Knowledge is stale:/)).toHaveCount(0);
+});
+
+test("selected empty knowledge base gives an apology instead of a general answer", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const session = await (await page.request.get("/api/session")).json();
+  const created = await page.request.post("/api/admin/repositories", {
+    headers: { "X-CSRF-Token": session.csrf },
+    data: { name: "Empty Manuals", groups: [] },
+  });
+  const { id } = await created.json();
+  await page.reload();
+  await page.getByLabel("Knowledge repository").selectOption(String(id));
+  await expect(page.getByText(/Knowledge-only: answers/)).toBeVisible();
+  await page
+    .getByLabel("Message Raazi")
+    .fill("What is the annual leave allowance?");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toContainText(
+    "Sorry, I couldn't find relevant information in Empty Manuals.",
+  );
+});

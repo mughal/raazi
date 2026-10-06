@@ -739,6 +739,13 @@ function App() {
                     </button>
                   </div>
                 </div>
+                {repository && (
+                  <p className="help">
+                    Knowledge-only: answers use the selected repository.
+                    Attached files are excluded. Missing evidence returns a
+                    no-information message.
+                  </p>
+                )}
                 <p id="upload-help" className="upload-help">
                   {workspace.uploads_enabled
                     ? "Files stay private. PDF, DOCX, TXT, Markdown: 20 MB." +

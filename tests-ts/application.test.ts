@@ -1694,3 +1694,144 @@ it("tests model inference without saving settings or chat history", async () => 
     ).status,
   ).toBe(502);
 });
+
+it("reports live embedding progress and marks a changed model stale", async () => {
+  const id = await addDoc(await repo());
+  await mutate("put", "/api/admin/embeddings", {
+    enabled: true,
+    base_url: "http://embed.test/v1",
+    model: "embed",
+    dimensions: 3,
+  });
+  let release!: () => void;
+  let entered!: () => void;
+  const pending = new Promise<void>((r) => {
+    release = r;
+  });
+  const started = new Promise<void>((r) => {
+    entered = r;
+  });
+  handler = async (url, body, key) => {
+    entered();
+    await pending;
+    return mockRequest(url, body);
+  };
+  const work = mutate("post", "/api/admin/documents/" + id + "/reindex").then(
+    (r) => r,
+  );
+  await started;
+  try {
+    const response = await admin.get("/api/admin/documents/status");
+    expect(response.status).toBe(200);
+    expect(response.body.documents[0]).toMatchObject({
+      status: "processing",
+      index_stage: "Creating embeddings",
+      index_completed: 0,
+    });
+    expect(response.body.documents[0].index_total).toBeGreaterThan(0);
+    expect(
+      (await request(service.app).get("/api/admin/documents/status")).status,
+    ).toBe(401);
+  } finally {
+    release();
+  }
+  expect((await work).status).toBe(200);
+  const ready = service.knowledge.documents()[0];
+  expect(ready.index_completed).toBe(ready.index_total);
+  expect(ready.index_stage).toBe("Ready");
+  handler = mockRequest;
+  await mutate("put", "/api/admin/embeddings", {
+    enabled: true,
+    base_url: "http://embed.test/v1",
+    model: "replacement",
+    dimensions: 3,
+  });
+  expect(service.knowledge.documents()[0].status).toBe("needs_reindex");
+  expect(
+    await service.knowledge.retrieve("leave", [ready.repo_id]),
+  ).toHaveLength(0);
+});
+
+it("repository-only answers abstain without hits, stale indexes, or verified evidence", async () => {
+  await configure();
+  const rid = await repo();
+  let calls = 0;
+  handler = async (url, body) => {
+    calls++;
+    return mockRequest(url, body);
+  };
+  const empty = await mutate("post", "/api/chat", {
+    message: "leave",
+    repository_id: rid,
+  });
+  expect(empty.body.content).toContain(
+    "couldn't find relevant information in HR",
+  );
+  expect(calls).toBe(0);
+  const id = await addDoc(rid);
+  const unrelated = await mutate("post", "/api/chat", {
+    message: "quantum galaxies",
+    repository_id: rid,
+  });
+  expect(unrelated.body.sources).toEqual([]);
+  expect(calls).toBe(0);
+  handler = async (_url, body: any) => {
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0].content).toContain("Never use general knowledge");
+    return {
+      choices: [
+        {
+          message: {
+            content: JSON.stringify({
+              answerable: true,
+              answer: "Made up policy [1]",
+              evidence: [{ source: 1, quote: "This quote is invented" }],
+            }),
+          },
+        },
+      ],
+    };
+  };
+  const refused = await mutate("post", "/api/chat", {
+    message: "annual leave",
+    repository_id: rid,
+    use_decision: true,
+  });
+  expect(refused.body.content).toContain("couldn't find relevant information");
+  expect(refused.body.sources).toEqual([]);
+  handler = mockRequest;
+  const grounded = await mutate("post", "/api/chat", {
+    message: "annual leave",
+    repository_id: rid,
+  });
+  expect(grounded.body.sources).toHaveLength(1);
+  expect(grounded.body.content).toContain("[1]");
+  service.db.run("UPDATE documents SET status='needs_reindex' WHERE id=?", id);
+  const stale = await mutate("post", "/api/chat", {
+    message: "leave",
+    repository_id: rid,
+  });
+  expect(stale.body.content).toContain("not fully ready");
+  expect(stale.body.sources).toEqual([]);
+});
+it("strict vector retrieval drops unrelated sections below its cosine threshold", async () => {
+  await configure();
+  const rid = await repo();
+  await addDoc(rid);
+  await mutate("put", "/api/admin/embeddings", {
+    enabled: true,
+    base_url: "http://embed.test/v1",
+    model: "embed",
+    dimensions: 3,
+  });
+  await mutate(
+    "post",
+    "/api/admin/documents/" + service.knowledge.documents()[0].id + "/reindex",
+  );
+  const response = await mutate("post", "/api/chat", {
+    message: "travel manager",
+    repository_id: rid,
+  });
+  expect(response.body.content).toContain("couldn't find relevant information");
+  expect(response.body.sources).toEqual([]);
+});
