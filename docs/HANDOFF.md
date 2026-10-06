@@ -25,6 +25,8 @@ Controller contract checks passed with mocked Git and Podman on Windows Git Bash
 
 ## What has been built
 
+The Thoughts disclosure remains closed until clicked. The reasoning parser now handles a standalone closing `</think>` delimiter without a generated opening tag, as can occur with template-prefilled reasoning. The Edge fixture uses this format to verify hidden thoughts, answer-only copy, and history reload. Fenced code examples containing closing tags remain intact. Unmarked reasoning still requires the inference server's reasoning parser.
+
 PostgreSQL storage is now explicitly external: `raazi-qa_postgres_data` for QA, or `${COMPOSE_PROJECT_NAME}_postgres_data` for another project. This keeps the prior named volume identity. Normal restarts already preserved it; external ownership also excludes it from Compose volume deletion. Missing external storage blocks restart before teardown. `prepare volumes` creates storage explicitly for a new installation and refuses to replace storage for an existing database container. Verify the live database mount name before applying the change. No image rebuild or data migration is needed when the existing name matches.
 
 Linux restart exposed a preflight bug: `compose run app` inherited `192.168.10.40`, already held by the running app. The check now uses a networkless Podman helper with read-only checkout/dependencies and no credentials. No image rebuild is needed for this controller/Compose correction. Shell regression checks reject Compose-based preflight and cover restart while the app is running. The actual corrected restart still needs Linux verification.

@@ -711,6 +711,9 @@ test("model display names and thinking switch keep reasoning separate across rel
   const reply = page.locator(".message.assistant").last();
   await expect(reply.locator(".markdown")).toHaveText("Visible final answer.");
   await expect(reply.locator(".thinking-text")).toBeHidden();
+  await expect(reply.locator(".message-thinking summary")).toHaveText(
+    "Thoughts",
+  );
   await reply.locator(".message-thinking summary").click();
   await expect(reply.locator(".thinking-text")).toHaveText(
     "Fixture model reasoning.",

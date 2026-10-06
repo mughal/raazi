@@ -27,7 +27,7 @@ const service = await createApp({
           {
             message: {
               content: on
-                ? "<think>Fixture model reasoning.</think>Visible final answer."
+                ? "Fixture model reasoning.\n</think>\n\nVisible final answer."
                 : "Thinking disabled answer.",
             },
           },

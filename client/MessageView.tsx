@@ -122,7 +122,7 @@ export function MessageView({
       {reply.reasoning && (
         <details className="message-thinking">
           <summary>
-            <Icon name="thinking" /> Thinking <Icon name="chevron" />
+            <Icon name="thinking" /> Thoughts <Icon name="chevron" />
           </summary>
           <div className="thinking-text">{reply.reasoning}</div>
         </details>

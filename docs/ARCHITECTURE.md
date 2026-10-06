@@ -96,6 +96,8 @@ The composer Thinking switch starts off after reload. Configured models send `ch
 
 Question edit/resend saves only after successful inference. A revision checks the saved version and tail message. It replaces the edited question and later replies atomically. Concurrent changes return a conflict rather than overwrite another request.
 
+The reply disclosure is labelled **Thoughts** and is closed by default. Reasoning extraction also accepts a standalone `</think>` line when a model template has prefilled the opening tag. Closing tags inside fenced code remain answer content. This applies to new replies and saved history. Unmarked prose cannot be reliably classified as reasoning.
+
 ## Decision routing
 
 The user switch beneath the composer starts off after reload. Admins enable routing and choose a decision provider, model, confidence threshold, and optional default chat model.

@@ -223,6 +223,14 @@ it("preserves prose and code mentioning thinking tags and rejects reasoning-only
   });
   expect(splitThinking("<think></think>\nAnswer").content).toBe("Answer");
   expect(splitThinking("<THINK>Steps</THINK>Answer").reasoning).toBe("Steps");
+  expect(splitThinking("Model steps.\n</think>\n\nFinal answer.")).toEqual({
+    content: "Final answer.",
+    reasoning: "Model steps.",
+  });
+  expect(splitThinking("```xml\n</think>\n```\nExplanation.")).toEqual({
+    content: "```xml\n</think>\n```\nExplanation.",
+    reasoning: "",
+  });
   await configure();
   handler = async () => ({
     choices: [{ message: { content: "<think>Unfinished reasoning" } }],
