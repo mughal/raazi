@@ -98,9 +98,11 @@ function list<T>(value: T[] | string | undefined): T[] {
 }
 export function MessageView({
   message,
+  platformName = "Raazi",
   busy,
   onResend,
 }: {
+  platformName?: string;
   message: Message;
   busy: boolean;
   onResend: (message: Message, prompt: string) => Promise<boolean>;
@@ -117,7 +119,9 @@ export function MessageView({
     /^\/sources\/[a-f0-9]{32}$/.test(source.url) ? source.url : "#";
   return (
     <article className={"message " + message.role}>
-      <div className="author">{message.role === "user" ? "You" : "Raazi"}</div>
+      <div className="author">
+        {message.role === "user" ? "You" : platformName}
+      </div>
       <AttachmentChips files={attached} />
       {reply.reasoning && (
         <details className="message-thinking">

@@ -15,8 +15,16 @@ type Props = {
   notify: (message: string) => void;
   refresh: () => Promise<void>;
   onSessionEnded: () => Promise<void>;
+  platformName: string;
+  refreshPlatform: () => Promise<void>;
 };
-export function Admin({ notify, refresh, onSessionEnded }: Props) {
+export function Admin({
+  notify,
+  refresh,
+  onSessionEnded,
+  platformName,
+  refreshPlatform,
+}: Props) {
   const [tab, setTab] = useState("Models"),
     [data, setData] = useState<AdminData | null>(null),
     [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null),
@@ -76,6 +84,7 @@ export function Admin({ notify, refresh, onSessionEnded }: Props) {
       </div>
       <div className="tabs" role="tablist">
         {[
+          "Platform",
           "Models",
           "Providers",
           "Embeddings",
@@ -103,6 +112,37 @@ export function Admin({ notify, refresh, onSessionEnded }: Props) {
         <div className="notice" role="alert">
           {error}
         </div>
+      )}
+      {tab === "Platform" && (
+        <form
+          key={platformName}
+          className="card"
+          onSubmit={(e) => {
+            const f = form(e);
+            void submit(async () => {
+              await api("/api/admin/platform", "PUT", {
+                platform_name: value(f, "platform_name"),
+              });
+              await refreshPlatform();
+            }, "Platform settings saved");
+          }}
+        >
+          <h2>Platform settings</h2>
+          <p className="help">
+            This name appears on sign-in and throughout the workspace.
+          </p>
+          <Field label="Platform name">
+            <input
+              name="platform_name"
+              required
+              maxLength={80}
+              defaultValue={platformName}
+            />
+          </Field>
+          <button className="primary" disabled={busy}>
+            Save platform settings
+          </button>
+        </form>
       )}
       {tab === "Providers" && (
         <ModelProviders notify={notify} refresh={refresh} />

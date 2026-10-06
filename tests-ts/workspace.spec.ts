@@ -842,3 +842,44 @@ test("model display names and thinking switch keep reasoning separate across rel
     page.getByRole("switch", { name: "Thinking", exact: true }),
   ).toBeDisabled();
 });
+
+test("platform name updates workspace and anonymous login", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Platform", exact: true }).click();
+  await page
+    .getByLabel("Platform name", { exact: true })
+    .fill("SNGPL Assistant");
+  await page.getByRole("button", { name: "Save platform settings" }).click();
+  await expect(page).toHaveTitle(
+    "SNGPL Assistant · SNGPL enterprise workspace",
+  );
+  await page.screenshot({ path: "data/platform-settings.png", fullPage: true });
+  const context = await page.context().browser()!.newContext();
+  try {
+    const login = await context.newPage();
+    await login.goto("http://127.0.0.1:8091");
+    await expect(login.locator(".login .brand")).toContainText(
+      "SNGPL Assistant",
+    );
+    await expect(login.locator(".login-logo")).toHaveCSS(
+      "background-color",
+      "rgba(0, 0, 0, 0)",
+    );
+    await login.screenshot({ path: "data/platform-login.png", fullPage: true });
+  } finally {
+    await context.close();
+  }
+
+  await page.getByLabel("Platform name", { exact: true }).fill("Raazi");
+  await page.getByRole("button", { name: "Save platform settings" }).click();
+  await expect(page).toHaveTitle("Raazi · SNGPL enterprise workspace");
+});

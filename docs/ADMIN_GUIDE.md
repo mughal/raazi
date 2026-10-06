@@ -175,3 +175,5 @@ The decision provider receives the question, up to ten recent messages, and file
 The lower of the two confidence scores must meet the threshold. Otherwise, Raazi asks for clarification without calling a chat model. A malformed response or service failure stops the request and preserves history. Disable routing before deleting or disabling its decision provider.
 
 Credentials and provider settings remain in the application metadata database. Chat history continues to use PostgreSQL when configured. Provider discovery uses authenticated `GET /models`; enter approved names manually if an engine does not implement discovery.
+
+Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.

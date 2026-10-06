@@ -99,6 +99,7 @@ export interface Workspace {
   supports_images: boolean;
 }
 export interface Session {
+  platform_name: string;
   auth_mode?: "development" | "oidc" | "portal";
   user: User | null;
   csrf: string;

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Workspace, Chat, Group, User } from "../shared/types";
 import { Icon } from "./ui";
 type Props = {
+  platformName: string;
   workspace: Workspace;
   user: User;
   view: string;
@@ -133,7 +134,7 @@ export function Sidebar(p: Props) {
               onClick={() => p.openView("chat")}
             >
               <img className="sngpl-logo" src="/sngpl-logo.png" alt="SNGPL" />
-              Raazi
+              {p.platformName}
             </button>
             <div className="workspace-caption">SNGPL ENTERPRISE WORKSPACE</div>
           </div>

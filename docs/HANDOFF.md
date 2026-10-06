@@ -183,3 +183,7 @@ Continue on `dev` unless the user requests another branch. Update these document
 ## Screen-size support
 
 The chat layout uses the available viewport height. Short laptop screens use a smaller welcome logo, less spacing, and compact suggestion cards. The composer, decision switch, and AI notice stay visible. Messages and overflow welcome content scroll above them. Narrow screens keep the history drawer. Browser checks cover desktop, laptop, tablet, phone, and landscape sizes.
+
+Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.
+
+Platform verification: TypeScript/Vite build and 57 API tests passed; three live PostgreSQL tests skipped. The focused Edge workflow passed for saving the platform name, updating the browser title, anonymous login branding, and transparent logo styling. Linux rollout remains pending.

@@ -2069,7 +2069,7 @@ label > select {
   object-fit: contain;
   flex-shrink: 0;
   padding: 2px;
-  background: #086394;
+  background: transparent;
   border-radius: 12px;
 }
 .login-logo {

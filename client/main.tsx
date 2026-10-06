@@ -20,7 +20,13 @@ import { Modal, Field, Icon } from "./ui";
 import "./style.css";
 type Editor =
   { kind: "chat"; chat: Chat } | { kind: "group"; group: Group | null };
-function SourceView({ id }: { id: string }) {
+function SourceView({
+  id,
+  platformName,
+}: {
+  id: string;
+  platformName: string;
+}) {
   const [source, setSource] = useState<
       (Source & { warning: string; file_url: string | null }) | null
     >(null),
@@ -34,7 +40,7 @@ function SourceView({ id }: { id: string }) {
   }, [id]);
   return (
     <div className="page source-view">
-      <a href="/">← Back to Raazi</a>
+      <a href="/">← Back to {platformName}</a>
       {error ? (
         <p className="notice" role="alert">
           {error}
@@ -90,6 +96,10 @@ function App() {
     [mobile, setMobile] = useState(false),
     [editor, setEditor] = useState<Editor | null>(null),
     [dialogError, setDialogError] = useState("");
+  const platformName = session?.platform_name || "Raazi";
+  useEffect(() => {
+    document.title = `${platformName} · SNGPL enterprise workspace`;
+  }, [platformName]);
   const chatScroll = useRef<HTMLDivElement>(null),
     end = useRef<HTMLDivElement>(null),
     fileInput = useRef<HTMLInputElement>(null),
@@ -128,6 +138,7 @@ function App() {
       void api<Session>("/api/session")
         .then(async (s) => {
           if (!s.user) await loadSession();
+          else setSession(s);
         })
         .catch(() => {});
     };
@@ -169,7 +180,7 @@ function App() {
   }, [messages, busy, view]);
   async function perform(
     fn: () => Promise<void>,
-    label = "Raazi is thinking…",
+    label = `${platformName} is thinking…`,
   ) {
     setBusyText(label);
     setBusy(true);
@@ -327,7 +338,7 @@ function App() {
               src="/sngpl-logo.png"
               alt="SNGPL"
             />
-            Raazi <small>ENTERPRISE</small>
+            {platformName} <small>ENTERPRISE</small>
           </div>
           <h1>
             Your knowledge.
@@ -368,7 +379,7 @@ function App() {
         </div>
       </div>
     );
-  if (sourceId) return <SourceView id={sourceId} />;
+  if (sourceId) return <SourceView id={sourceId} platformName={platformName} />;
   if (!workspace)
     return <div className="loading">{error || "Loading workspace…"}</div>;
   const chosenModel =
@@ -411,6 +422,7 @@ function App() {
       }
     >
       <Sidebar
+        platformName={platformName}
         workspace={workspace}
         user={session.user}
         view={view}
@@ -475,7 +487,7 @@ function App() {
               <span className="topbar-context">
                 {view === "chat"
                   ? (currentFolder?.name ?? "Your private workspace")
-                  : "Raazi enterprise workspace"}
+                  : `${platformName} enterprise workspace`}
               </span>
             </div>
           </div>
@@ -567,6 +579,7 @@ function App() {
                   {messages.map((m, n) => (
                     <MessageView
                       key={m.id ?? n}
+                      platformName={platformName}
                       message={m}
                       busy={busy}
                       onResend={resendQuestion}
@@ -617,8 +630,8 @@ function App() {
                   }}
                 />
                 <textarea
-                  aria-label="Message Raazi"
-                  placeholder="Ask Raazi anything about your work…"
+                  aria-label={`Message ${platformName}`}
+                  placeholder={`Ask ${platformName} anything about your work…`}
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   maxLength={16000}
@@ -770,6 +783,8 @@ function App() {
           <Admin
             notify={notify}
             refresh={refresh}
+            platformName={platformName}
+            refreshPlatform={loadSession}
             onSessionEnded={loadSession}
           />
         )}
@@ -844,8 +859,8 @@ function App() {
               ))}
             </section>
             <p className="help">
-              Enterprise context helps Raazi tailor answers to your work.
-              Contact your administrator to update it.
+              Enterprise context helps {platformName} tailor answers to your
+              work. Contact your administrator to update it.
             </p>
           </div>
         )}

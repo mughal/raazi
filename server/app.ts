@@ -293,6 +293,8 @@ export async function createApp(config: Config) {
       csrf: session.csrf,
       development: config.mode === "development",
       auth_mode: config.mode,
+      platform_name: db.get("SELECT platform_name FROM settings WHERE id=1")!
+        .platform_name,
     });
   });
   app.put("/api/preferences", protect(), (req, res) => {
@@ -933,6 +935,27 @@ export async function createApp(config: Config) {
         "SELECT user_id,action,created_at FROM audit ORDER BY id DESC LIMIT 50",
       ),
     });
+  });
+  app.put("/api/admin/platform", protect(true), (req, res) => {
+    const data = parse(
+      z
+        .object({
+          platform_name: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .regex(/^[^\u0000-\u001f\u007f]+$/),
+        })
+        .strict(),
+      req,
+    );
+    db.run(
+      "UPDATE settings SET platform_name=? WHERE id=1",
+      data.platform_name,
+    );
+    audit(res, "Updated platform name");
+    res.json({ ok: true });
   });
   app.put("/api/admin/settings", protect(true), (req, res) => {
     const data = parse(

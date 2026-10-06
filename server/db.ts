@@ -95,6 +95,7 @@ export class LocalDB {
         composer_size: "TEXT NOT NULL DEFAULT 'compact'",
       },
       settings: {
+        platform_name: "TEXT NOT NULL DEFAULT 'Raazi'",
         display_name: "TEXT NOT NULL DEFAULT ''",
         thinking_control: "TEXT NOT NULL DEFAULT 'none'",
         supports_images: "INTEGER NOT NULL DEFAULT 0",

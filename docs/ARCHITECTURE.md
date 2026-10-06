@@ -4,7 +4,7 @@ Updated: 6 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before con
 
 ## Product and scope
 
-Raazi is an SNGPL-branded enterprise chat and knowledge workspace. The product name remains Raazi. Other names were discussed, but no rename was agreed.
+Raazi is an SNGPL-branded enterprise chat and knowledge workspace. Raazi is the default displayed platform name. Administrators can change it under Administration > Platform.
 
 The application uses React and TypeScript in the browser. Express and TypeScript run on Node.js. The earlier Python/Flask implementation is retained in Git history only. Python, make, and g++ support native Node dependency installation in the reusable runtime image; Node runs the application.
 
@@ -176,3 +176,5 @@ Production deployment, live AD sign-in, Huawei S3 compatibility, and live Jev/mo
 ## Screen-size support
 
 The chat layout uses the available viewport height. Short laptop screens use a smaller welcome logo, less spacing, and compact suggestion cards. The composer, decision switch, and AI notice stay visible. Messages and overflow welcome content scroll above them. Narrow screens keep the history drawer. Browser checks cover desktop, laptop, tablet, phone, and landscape sizes.
+
+Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.
