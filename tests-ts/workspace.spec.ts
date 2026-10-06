@@ -231,6 +231,15 @@ test("React workspace: settings, real uploads, citations, folders, persisted cha
     .getByLabel("Embedding model", { exact: true })
     .fill("fixture-embedding");
   await page.getByLabel("Vector dimensions").fill("3");
+  await page
+    .getByRole("button", { name: "Test connection", exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      "Connection successful: fixture-embedding, 3 dimensions. Settings were not saved.",
+    ),
+  ).toBeVisible();
+
   await page.getByRole("button", { name: "Save embedding settings" }).click();
   await expect(page.getByRole("status")).toContainText(
     "Embedding settings saved",
@@ -882,4 +891,27 @@ test("platform name updates workspace and anonymous login", async ({
   await page.getByLabel("Platform name", { exact: true }).fill("Raazi");
   await page.getByRole("button", { name: "Save platform settings" }).click();
   await expect(page).toHaveTitle("Raazi · SNGPL enterprise workspace");
+});
+
+test("model connection can be checked without saving", async ({ page }) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page
+    .getByLabel("Model base URL", { exact: true })
+    .fill("http://fixture.test/v1");
+  await page.getByLabel("Model name", { exact: true }).fill("fixture-chat");
+  await page
+    .getByRole("button", { name: "Test connection", exact: true })
+    .click();
+  await expect(
+    page.getByText(
+      "Connection successful: fixture-chat returned a text response. Settings were not saved.",
+    ),
+  ).toBeVisible();
 });

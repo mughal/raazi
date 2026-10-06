@@ -830,6 +830,22 @@ describe("document ingestion and citations", () => {
   });
 });
 describe("embedding lifecycle", () => {
+  it("tests embedding connection without saving or invalidating documents", async () => {
+    await addDoc(await repo());
+    const before = service.db.get("SELECT * FROM settings WHERE id=1");
+    const result = await mutate("post", "/api/admin/embeddings/test", {
+      base_url: "http://embed.test/v1",
+      model: "embed",
+      dimensions: 3,
+    });
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({ ok: true, model: "embed", dimensions: 3 });
+    expect(service.db.get("SELECT * FROM settings WHERE id=1")).toEqual(before);
+    expect(service.db.get("SELECT status FROM documents")!.status).toBe(
+      "ready",
+    );
+  });
+
   const settings = {
     enabled: true,
     base_url: "http://embed.test/v1",
@@ -1650,4 +1666,31 @@ it("routes image chats only to approved vision models and keeps image bytes out 
   expect(calls[1].url).toBe("http://vision.test/v1/chat/completions");
   expect(calls[1].body.messages.at(-1).content[1].type).toBe("image_url");
   expect(vision).toBeTruthy();
+});
+
+it("tests model inference without saving settings or chat history", async () => {
+  await configure();
+  const before = service.db.get("SELECT * FROM settings WHERE id=1");
+  let usedKey = "";
+  handler = async (_url, _body, key) => {
+    usedKey = key;
+    return { choices: [{ message: { content: "OK" } }] };
+  };
+  const result = await mutate("post", "/api/admin/model/test", {
+    base_url: "http://model.test/v1",
+    model: "local",
+  });
+  expect(result.status).toBe(200);
+  expect(usedKey).toBe("model-secret");
+  expect(service.db.get("SELECT * FROM settings WHERE id=1")).toEqual(before);
+  expect(service.db.all("SELECT * FROM conversations")).toHaveLength(0);
+  handler = async () => ({ choices: [] });
+  expect(
+    (
+      await mutate("post", "/api/admin/model/test", {
+        base_url: "http://model.test/v1",
+        model: "local",
+      })
+    ).status,
+  ).toBe(502);
 });

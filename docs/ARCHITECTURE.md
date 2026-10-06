@@ -178,3 +178,7 @@ Production deployment, live AD sign-in, Huawei S3 compatibility, and live Jev/mo
 The chat layout uses the available viewport height. Short laptop screens use a smaller welcome logo, less spacing, and compact suggestion cards. The composer, decision switch, and AI notice stay visible. Messages and overflow welcome content scroll above them. Narrow screens keep the history drawer. Browser checks cover desktop, laptop, tablet, phone, and landscape sizes.
 
 Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.
+
+Embedding settings include Test connection. It tests the entered endpoint, model, dimensions, and key without saving settings or changing document indexes. A blank key uses the saved key unless Remove saved embedding key is selected. Success shows the model and returned dimensions. Save still validates the connection before applying settings.
+
+Models and Embeddings each have an independent Test connection button beside their save control. Tests use current form values and the saved key when the key field is blank. Model testing sends a short inference request and checks for returned text; it does not create a chat or save settings. Embedding testing checks returned vectors.

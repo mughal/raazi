@@ -957,6 +957,47 @@ export async function createApp(config: Config) {
     audit(res, "Updated platform name");
     res.json({ ok: true });
   });
+  app.post("/api/admin/model/test", protect(true), async (req, res) => {
+    const data = parse(
+      z.object({
+        base_url: baseURL,
+        model: text(200, true),
+        api_key: text(4000),
+        clear_api_key: z.boolean().optional(),
+        thinking_control: thinkingControlSchema.optional(),
+      }),
+      req,
+    );
+    const saved = knowledge.settings();
+    const key =
+      data.api_key || (data.clear_api_key ? "" : secrets.open(saved.api_key));
+    const response = await (config.request ?? requestJSON)(
+      data.base_url + "/chat/completions",
+      {
+        model: data.model,
+        messages: [{ role: "user", content: "Reply with OK." }],
+        stream: false,
+        max_tokens: 64,
+        ...thinkingParameters(
+          data.thinking_control ?? saved.thinking_control,
+          false,
+        ),
+      },
+      key,
+    );
+    const message = response?.choices?.[0]?.message;
+    if (
+      !message ||
+      ![message.content, message.reasoning_content, message.reasoning].some(
+        (v) => typeof v === "string" && v.trim(),
+      )
+    )
+      throw new Failure(
+        502,
+        "The model returned no text. Check the model and inference server.",
+      );
+    res.json({ ok: true, model: data.model });
+  });
   app.put("/api/admin/settings", protect(true), (req, res) => {
     const data = parse(
       z.object({
@@ -1038,6 +1079,36 @@ export async function createApp(config: Config) {
     protect(true),
     (_req, res) => res.json(embeddingInfo()),
   );
+  app.post("/api/admin/embeddings/test", protect(true), async (req, res) => {
+    const data = parse(
+      z.object({
+        base_url: baseURL,
+        model: text(200, true),
+        dimensions: z.number().int().min(1).max(2000),
+        api_key: text(4000),
+        clear_api_key: z.boolean().optional(),
+      }),
+      req,
+    );
+    const old = knowledge.settings();
+    const vectors = await embeddings(
+      {
+        ...old,
+        embedding_url: data.base_url,
+        embedding_model: data.model,
+        embedding_dimensions: data.dimensions,
+        embedding_key: data.api_key
+          ? secrets.seal(data.api_key)
+          : data.clear_api_key
+            ? ""
+            : old.embedding_key,
+      },
+      secrets,
+      ["Gas safety instructions"],
+      config.request ?? requestJSON,
+    );
+    res.json({ ok: true, model: data.model, dimensions: vectors[0].length });
+  });
   app.put(
     ["/api/admin/embeddings", "/api/admin/embedding-settings"],
     protect(true),

@@ -177,3 +177,7 @@ The lower of the two confidence scores must meet the threshold. Otherwise, Raazi
 Credentials and provider settings remain in the application metadata database. Chat history continues to use PostgreSQL when configured. Provider discovery uses authenticated `GET /models`; enter approved names manually if an engine does not implement discovery.
 
 Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.
+
+Embedding settings include Test connection. It tests the entered endpoint, model, dimensions, and key without saving settings or changing document indexes. A blank key uses the saved key unless Remove saved embedding key is selected. Success shows the model and returned dimensions. Save still validates the connection before applying settings.
+
+Models and Embeddings each have an independent Test connection button beside their save control. Tests use current form values and the saved key when the key field is blank. Model testing sends a short inference request and checks for returned text; it does not create a chat or save settings. Embedding testing checks returned vectors.

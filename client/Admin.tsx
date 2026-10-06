@@ -30,6 +30,8 @@ export function Admin({
     [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null),
     [storage, setStorage] = useState<StorageSettings | null>(null),
     [busy, setBusy] = useState(false),
+    [embeddingTest, setEmbeddingTest] = useState(""),
+    [modelTest, setModelTest] = useState(""),
     [error, setError] = useState(""),
     [editUser, setEditUser] = useState<User | null>(null);
   async function load() {
@@ -167,6 +169,7 @@ export function Admin({
           key={JSON.stringify(data.settings)}
           onSubmit={(e) => {
             const f = form(e);
+            setModelTest("");
             void submit(
               () =>
                 api("/api/admin/settings", "PUT", {
@@ -244,7 +247,34 @@ export function Admin({
               defaultValue={data.settings.system_prompt}
             />
           </Field>
+          {modelTest && <p role="status">{modelTest}</p>}
           <div className="form-actions">
+            <button
+              type="button"
+              disabled={busy}
+              onClick={(e) => {
+                const f = new FormData(e.currentTarget.form!);
+                setBusy(true);
+                setError("");
+                setModelTest("");
+                void api<{ model: string }>("/api/admin/model/test", "POST", {
+                  base_url: value(f, "base_url"),
+                  model: value(f, "model"),
+                  api_key: value(f, "api_key"),
+                  clear_api_key: f.has("clear_api_key"),
+                  thinking_control: value(f, "thinking_control"),
+                })
+                  .then((result) =>
+                    setModelTest(
+                      `Connection successful: ${result.model} returned a text response. Settings were not saved.`,
+                    ),
+                  )
+                  .catch((e) => setError(e.message))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              Test connection
+            </button>
             <button className="primary" disabled={busy}>
               Save model settings
             </button>
@@ -257,6 +287,7 @@ export function Admin({
           key={JSON.stringify(embedding)}
           onSubmit={(e) => {
             const f = form(e);
+            setEmbeddingTest("");
             void submit(
               () =>
                 api("/api/admin/embeddings", "PUT", {
@@ -327,6 +358,39 @@ export function Admin({
             Saving tests the embedding connection. Disable embeddings to use
             keyword search.
           </p>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={(e) => {
+              const target = e.currentTarget.form!;
+              if (!target.reportValidity()) return;
+              const f = new FormData(target);
+              setBusy(true);
+              setError("");
+              setEmbeddingTest("");
+              void api<{ model: string; dimensions: number }>(
+                "/api/admin/embeddings/test",
+                "POST",
+                {
+                  base_url: value(f, "base_url"),
+                  model: value(f, "model"),
+                  dimensions: Number(f.get("dimensions")),
+                  api_key: value(f, "api_key"),
+                  clear_api_key: f.has("clear_api_key"),
+                },
+              )
+                .then((result) =>
+                  setEmbeddingTest(
+                    `Connection successful: ${result.model}, ${result.dimensions} dimensions. Settings were not saved.`,
+                  ),
+                )
+                .catch((e) => setError(e.message))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Test connection
+          </button>
+          {embeddingTest && <p role="status">{embeddingTest}</p>}
           <button className="primary" disabled={busy}>
             {busy ? "Testing connection…" : "Save embedding settings"}
           </button>

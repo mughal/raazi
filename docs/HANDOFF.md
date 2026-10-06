@@ -187,3 +187,9 @@ The chat layout uses the available viewport height. Short laptop screens use a s
 Platform branding: Administration > Platform saves a display name (1-80 characters) in SQLite. Login, workspace labels, and browser title use this name. Signed-in pages refresh it within 30 seconds; reload login to see changes. Internal container names, storage, and keys stay unchanged. The SNGPL mark has no blue background.
 
 Platform verification: TypeScript/Vite build and 57 API tests passed; three live PostgreSQL tests skipped. The focused Edge workflow passed for saving the platform name, updating the browser title, anonymous login branding, and transparent logo styling. Linux rollout remains pending.
+
+Embedding settings include Test connection. It tests the entered endpoint, model, dimensions, and key without saving settings or changing document indexes. A blank key uses the saved key unless Remove saved embedding key is selected. Success shows the model and returned dimensions. Save still validates the connection before applying settings.
+
+Embedding test verification: build and 58 API tests passed; three live PostgreSQL tests skipped. The Edge workspace workflow passed with the new test button. The actual Aigate embedding connection needs testing on Linux.
+
+Models and Embeddings each have an independent Test connection button beside their save control. Tests use current form values and the saved key when the key field is blank. Model testing sends a short inference request and checks for returned text; it does not create a chat or save settings. Embedding testing checks returned vectors.
