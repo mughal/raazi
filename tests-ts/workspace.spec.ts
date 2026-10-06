@@ -1,5 +1,70 @@
 import { test, expect } from "@playwright/test";
 import { policyPDF, policyDOCX } from "./fixtures";
+test("admin sessions can end another browser session and all sessions including their own", async ({
+  page,
+  browser,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const other = await browser.newContext();
+  try {
+    const secondPage = await other.newPage();
+    await secondPage.goto("http://127.0.0.1:8091");
+    await secondPage
+      .getByRole("button", { name: "Continue as local administrator" })
+      .click();
+    const otherSessions = await (
+      await other.request.get("http://127.0.0.1:8091/api/admin/sessions")
+    ).json();
+    const otherId = otherSessions.sessions.find((s: any) => s.current).id;
+    await page
+      .getByRole("button", { name: "Administration", exact: true })
+      .last()
+      .click();
+    await page.getByRole("tab", { name: "Sessions", exact: true }).click();
+    await expect(
+      page.getByRole("heading", { name: "Logged-in users and sessions" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("cell", { name: /This session/ }),
+    ).toBeVisible();
+    await page
+      .locator(`[data-session-id="${otherId}"]`)
+      .getByRole("button", { name: "End session", exact: true })
+      .click();
+    await page.getByRole("button", { name: "End now", exact: true }).click();
+    await expect(page.locator(`[data-session-id="${otherId}"]`)).toHaveCount(0);
+    await secondPage.reload();
+    await expect(
+      secondPage.getByRole("button", {
+        name: "Continue as local administrator",
+      }),
+    ).toBeVisible();
+    await page.screenshot({
+      path: "data/react-admin-sessions.png",
+      fullPage: true,
+    });
+    await page
+      .getByRole("button", {
+        name: "End all sessions for Local administrator",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByText(
+        "This includes your current session. You will be signed out.",
+      ),
+    ).toBeVisible();
+    await page.getByRole("button", { name: "End now", exact: true }).click();
+    await expect(
+      page.getByRole("button", { name: "Continue as local administrator" }),
+    ).toBeVisible();
+  } finally {
+    await other.close();
+  }
+});
 test("Portal sign-in requires password and authenticator before opening the workspace", async ({
   page,
 }) => {

@@ -21,6 +21,10 @@ export async function api<T>(
       body === undefined ? undefined : multipart ? body : JSON.stringify(body),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error ?? "Request failed");
+  if (!response.ok) {
+    if (response.status === 401)
+      window.dispatchEvent(new Event("raazi-session-ended"));
+    throw new Error(data.error ?? "Request failed");
+  }
   return data as T;
 }

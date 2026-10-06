@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve, sep } from "node:path";
 import { SignJWT } from "jose";
+import { Sessions } from "../server/sessions";
 import sharp from "sharp";
 import { PDFDocument } from "pdf-lib";
 import { createApp } from "../server/app";
@@ -71,7 +72,11 @@ async function stranger() {
   service.db.run(
     "INSERT INTO users(id,name,email,role,groups_json) VALUES('stranger','Stranger','stranger@test','user','[]')",
   );
-  const token = await new SignJWT({ uid: "stranger", csrf: "stranger-csrf" })
+  const token = await new SignJWT({
+    uid: "stranger",
+    csrf: "stranger-csrf",
+    sid: new Sessions(service.db).create("stranger"),
+  })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuer("raazi")
     .setAudience("raazi-session")

@@ -1,5 +1,13 @@
 # Admin guide
 
+## View and end sessions
+
+Open **Administration → Sessions**. The page shows users with unexpired sessions, their roles, browsers, sign-in times, last activity, and expiry. **This session** marks your current browser. **Recently active** means an authenticated request within five minutes; it is not proof that the user is still at the screen. Idle browsers remain signed in until expiry, logout, or revocation. The page refreshes every 30 seconds.
+
+Use **End session** for one browser or **End all sessions for [user]** for all that user's current logins. Review the target in the confirmation dialog. Ending your own session signs you out too. The audit log records the administrator and action. The user can sign in again; use **Users → Disable account** if access must stay blocked. Ending a Raazi session does not end AD/Portal SSO elsewhere.
+
+The server rejects subsequent requests immediately. Open browsers return to sign-in on an unauthorized response or within the next 30-second session check. A model request already in progress can finish at the inference engine, but Raazi will not save its chat answer after the session is revoked. This upgrade requires existing users to sign in once again. New sessions survive ordinary application restarts.
+
 ## Configure the local model
 
 1. Open **Administration → Models**.

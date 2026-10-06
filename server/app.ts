@@ -1,4 +1,5 @@
 import { demoAnswer } from "./demo.js";
+import { Sessions } from "./sessions.js";
 import { PortalAuth } from "./portal-auth.js";
 import {
   Routing,
@@ -160,6 +161,7 @@ export async function createApp(config: Config) {
     throw error;
   }
   const token = () => randomBytes(32).toString("base64url");
+  const sessions = new Sessions(db);
   const cookieOptions = {
     httpOnly: true,
     secure: config.secure,
@@ -174,11 +176,20 @@ export async function createApp(config: Config) {
       .setIssuer("raazi")
       .setAudience("raazi-session")
       .sign(key);
-  const setSession = async (res: Response, payload: Row) =>
+  const setSession = async (res: Response, payload: Row) => {
+    if (payload.uid) {
+      if (typeof res.locals.session.sid === "string")
+        sessions.revoke(res.locals.session.sid);
+      payload.sid = sessions.create(
+        payload.uid,
+        res.req.get("User-Agent") ?? "",
+      );
+    }
     res.cookie("raazi_session", await sign(payload), {
       ...cookieOptions,
       maxAge: 8 * 60 * 60 * 1000,
     });
+  };
   app.disable("x-powered-by");
   app.use(cookieParser());
   app.use(express.json({ limit: "4mb" }));
@@ -205,6 +216,19 @@ export async function createApp(config: Config) {
     } catch {
       /* An expired or invalid cookie represents a signed-out session. */
     }
+    if (
+      res.locals.session.uid &&
+      !sessions.valid(res.locals.session.sid, res.locals.session.uid)
+    ) {
+      res.locals.session = {};
+      res.clearCookie("raazi_session", cookieOptions);
+    }
+    if (
+      res.locals.session.uid &&
+      req.path !== "/api/session" &&
+      /^\/(api|auth|sources)\//.test(req.path)
+    )
+      sessions.touch(res.locals.session.sid);
     if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
       const expected = res.locals.session.csrf,
         actual = req.get("X-CSRF-Token") ?? "";
@@ -220,10 +244,12 @@ export async function createApp(config: Config) {
     next();
   });
   const current = (res: Response) =>
-    db.get(
-      "SELECT * FROM users WHERE id=? AND disabled=0",
-      res.locals.session.uid ?? "",
-    );
+    sessions.valid(res.locals.session.sid, res.locals.session.uid)
+      ? db.get(
+          "SELECT * FROM users WHERE id=? AND disabled=0",
+          res.locals.session.uid ?? "",
+        )
+      : undefined;
   const protect =
     (admin = false) =>
     (_req: Request, res: Response, next: NextFunction) => {
@@ -312,6 +338,8 @@ export async function createApp(config: Config) {
     res.json({ ok: true });
   });
   app.post("/auth/logout", (_req, res) => {
+    if (typeof res.locals.session.sid === "string")
+      sessions.revoke(res.locals.session.sid);
     if (portal && typeof _req.cookies.raazi_portal === "string")
       portal.cancel(_req.cookies.raazi_portal);
     res.clearCookie("raazi_portal", cookieOptions);
@@ -858,6 +886,34 @@ export async function createApp(config: Config) {
       attachments: files,
     });
   });
+  app.get("/api/admin/sessions", protect(true), (_req, res) => {
+    res.json({
+      sessions: sessions.list(res.locals.session.sid),
+      recent_minutes: 5,
+    });
+  });
+  app.delete("/api/admin/sessions/:id", protect(true), (req, res) => {
+    const id = z
+      .string()
+      .regex(/^[A-Za-z0-9_-]{32}$/)
+      .parse(req.params.id);
+    const target = db.get("SELECT user_id FROM login_sessions WHERE id=?", id);
+    if (!target) throw new Failure(404, "Session not found.");
+    const count = sessions.revoke(id);
+    audit(
+      res,
+      `Ended session ${id} for user ${target.user_id} (${count} revoked)`,
+    );
+    res.json({ ok: true, current_ended: id === res.locals.session.sid });
+  });
+  app.delete("/api/admin/users/:id/sessions", protect(true), (req, res) => {
+    const uid = String(req.params.id);
+    if (!db.get("SELECT id FROM users WHERE id=?", uid))
+      throw new Failure(404, "User not found.");
+    const count = sessions.revokeUser(uid);
+    audit(res, `Ended all sessions for user ${uid} (${count} revoked)`);
+    res.json({ ok: true, count, current_ended: uid === res.locals.user.id });
+  });
   app.get("/api/admin", protect(true), (_req, res) => {
     const s = knowledge.settings();
     res.json({
@@ -1146,6 +1202,7 @@ export async function createApp(config: Config) {
       Number(data.disabled),
       id,
     );
+    if (data.disabled) sessions.revokeUser(id);
     audit(res, "Updated user profile");
     res.json({ ok: true });
   });

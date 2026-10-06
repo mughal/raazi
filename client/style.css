@@ -1961,6 +1961,11 @@ label > select {
   flex-wrap: wrap;
   gap: 0 16px;
 }
+.session-browser {
+  max-width: 240px;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
 .message-thinking {
   margin: 8px 0 12px;
   color: var(--muted);

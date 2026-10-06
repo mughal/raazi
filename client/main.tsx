@@ -113,8 +113,34 @@ function App() {
     setCSRF(s.csrf);
     setSession(s);
     if (s.user) await refresh();
-    else setWorkspace(null);
+    else {
+      setWorkspace(null);
+      setMessages([]);
+      setCid(null);
+      setDrafts({});
+      setDraftFiles({});
+      setView("chat");
+    }
   }
+  useEffect(() => {
+    if (!session?.user) return;
+    const check = () => {
+      void api<Session>("/api/session")
+        .then(async (s) => {
+          if (!s.user) await loadSession();
+        })
+        .catch(() => {});
+    };
+    const ended = () => {
+      void loadSession().catch(() => {});
+    };
+    const timer = setInterval(check, 30000);
+    window.addEventListener("raazi-session-ended", ended);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("raazi-session-ended", ended);
+    };
+  }, [session?.user?.id]);
   useEffect(() => {
     document.documentElement.dataset.palette =
       session?.user?.palette ?? "forest";
@@ -741,7 +767,11 @@ function App() {
           </div>
         )}
         {view === "admin" && session.user.role === "admin" && (
-          <Admin notify={notify} refresh={refresh} />
+          <Admin
+            notify={notify}
+            refresh={refresh}
+            onSessionEnded={loadSession}
+          />
         )}
         {view === "knowledge" && (
           <div className="page">

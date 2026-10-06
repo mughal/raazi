@@ -6,6 +6,7 @@ import type {
   StorageSettings,
 } from "../shared/types";
 import { ModelProviders } from "./ModelProviders";
+import { AdminSessions } from "./AdminSessions";
 import { ThinkingSetting } from "./ThinkingSetting";
 import { StorageForm } from "./StorageForm";
 import { api } from "./api";
@@ -13,8 +14,9 @@ import { Field, Modal } from "./ui";
 type Props = {
   notify: (message: string) => void;
   refresh: () => Promise<void>;
+  onSessionEnded: () => Promise<void>;
 };
-export function Admin({ notify, refresh }: Props) {
+export function Admin({ notify, refresh, onSessionEnded }: Props) {
   const [tab, setTab] = useState("Models"),
     [data, setData] = useState<AdminData | null>(null),
     [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null),
@@ -80,6 +82,7 @@ export function Admin({ notify, refresh }: Props) {
           "Storage",
           "Knowledge",
           "Users",
+          "Sessions",
           "Audit",
         ].map((t) => (
           <button
@@ -103,6 +106,9 @@ export function Admin({ notify, refresh }: Props) {
       )}
       {tab === "Providers" && (
         <ModelProviders notify={notify} refresh={refresh} />
+      )}
+      {tab === "Sessions" && (
+        <AdminSessions notify={notify} onSessionEnded={onSessionEnded} />
       )}
       {tab === "Storage" && (
         <StorageForm

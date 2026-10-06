@@ -126,6 +126,12 @@ Scanned PDFs need OCR before upload. OCR is not implemented. Unreadable private 
 
 ## Identity and security
 
+Authenticated JWT cookies contain a random session ID registered in SQLite `login_sessions`. Every authenticated request checks expiry, revocation, user binding, and account state. Development, Portal OTP, and OIDC logins register sessions; reauthentication rotates the browser's session. Logout revokes its server record. Disabling an account revokes all its sessions. Session records survive app restarts and expire after eight hours. Anonymous CSRF cookies and OIDC pending state are not registered login sessions. Pre-upgrade cookies without session IDs require a new sign-in; no workspace data is removed.
+
+Administration → Sessions lists unexpired, unrevoked sessions with user/role, browser user-agent, sign-in, last activity, expiry, and current-browser indication. Only admins can list or revoke sessions. Single-session and all-user revocations require CSRF and write audit entries. No cookie, JWT, CSRF token, or provider credential is shown. Expired records older than 30 days are removed during login.
+
+Activity reflects authenticated API/source requests, throttled to one timestamp update per 30 seconds. Recently active means within five minutes. Passive `/api/session` checks do not count as activity. The sessions panel refreshes every 30 seconds; each signed-in browser checks its login state every 30 seconds and handles unauthorized API responses. Revocation denies subsequent requests immediately. Existing inference can finish at the provider, but the save-time session check rejects its chat result after revocation. Terminating Raazi sessions does not terminate the enterprise identity provider's session or disable the user's account.
+
 Production uses AD-backed OIDC through AD FS or Entra ID. It verifies signed tokens, issuer, audience, nonce, state, and PKCE. Direct LDAP and integrated Windows authentication are not implemented.
 
 Mutations require CSRF. Users cannot access another user's history, private files, or sources. Repository groups control shared access. Group-overage expansion is not implemented.

@@ -104,6 +104,20 @@ export interface Session {
   csrf: string;
   development: boolean;
 }
+export interface LoginSession {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: "admin" | "user";
+  disabled: boolean;
+  current: boolean;
+  recently_active: boolean;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  user_agent: string;
+}
 export interface Settings {
   display_name?: string;
   thinking_control?: ThinkingControl;

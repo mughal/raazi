@@ -10,6 +10,7 @@ import {
   createHash,
 } from "node:crypto";
 import { SignJWT } from "jose";
+import { Sessions } from "../server/sessions";
 import Database from "better-sqlite3";
 import { createApp, Config } from "../server/app";
 import {
@@ -264,7 +265,11 @@ async function user(id = "employee", groups: string[] = []) {
     JSON.stringify(groups),
   );
   const csrf = "test-user-csrf",
-    cookie = await new SignJWT({ uid: id, csrf })
+    cookie = await new SignJWT({
+      uid: id,
+      csrf,
+      sid: new Sessions(service.db).create(id, "Fixture browser"),
+    })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer("raazi")
       .setAudience("raazi-session")
@@ -280,6 +285,199 @@ const userGet = async (
   const u = await user(id, groups);
   return request(service.app).get(path).set("Cookie", u.cookie);
 };
+it("lists sessions only for admins, distinguishes activity, and revokes one or all user sessions", async () => {
+  const first = await user("session-user"),
+    second = await user("session-user");
+  const firstId = service.db.all(
+    "SELECT id FROM login_sessions WHERE user_id=? ORDER BY created_at",
+    "session-user",
+  )[0].id;
+  service.db.run(
+    "UPDATE login_sessions SET last_seen_at=? WHERE id=?",
+    Date.now() - 10 * 60000,
+    firstId,
+  );
+  const listed = await admin.get("/api/admin/sessions");
+  expect(listed.status).toBe(200);
+  expect(
+    listed.body.sessions.filter((s: any) => s.user_id === "session-user"),
+  ).toHaveLength(2);
+  expect(
+    listed.body.sessions.find((s: any) => s.id === firstId).recently_active,
+  ).toBe(false);
+  expect(listed.body.sessions.find((s: any) => s.current).user_id).toBe(
+    "dev-admin",
+  );
+  expect(JSON.stringify(listed.body)).not.toContain("raazi_session=");
+  expect(
+    (
+      await request(service.app)
+        .get("/api/admin/sessions")
+        .set("Cookie", first.cookie)
+    ).status,
+  ).toBe(403);
+  expect((await admin.delete("/api/admin/sessions/" + firstId)).status).toBe(
+    403,
+  );
+  expect(
+    (await mutate("delete", "/api/admin/sessions/" + firstId)).status,
+  ).toBe(200);
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", first.cookie)
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", second.cookie)
+    ).status,
+  ).toBe(200);
+  expect(
+    (await mutate("delete", "/api/admin/users/session-user/sessions")).body
+      .count,
+  ).toBe(1);
+  expect(
+    (
+      await request(service.app)
+        .get("/api/session")
+        .set("Cookie", second.cookie)
+    ).body.user,
+  ).toBeNull();
+  expect(
+    service.db.all("SELECT action FROM audit WHERE action LIKE 'Ended %'"),
+  ).toHaveLength(2);
+  const mine = (await admin.get("/api/admin/sessions")).body.sessions.find(
+    (s: any) => s.current,
+  );
+  expect(
+    (await mutate("delete", "/api/admin/sessions/" + mine.id)).body
+      .current_ended,
+  ).toBe(true);
+  expect((await admin.get("/api/workspace")).status).toBe(401);
+});
+
+it("rejects legacy untracked cookies, expires registered sessions, and prevents revoked requests saving inference", async () => {
+  const employee = await user("session-user");
+  const oldCookie = await new SignJWT({ uid: "session-user", csrf: "old-csrf" })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuer("raazi")
+    .setAudience("raazi-session")
+    .setExpirationTime("1h")
+    .sign(new TextEncoder().encode(secret));
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", "raazi_session=" + oldCookie)
+    ).status,
+  ).toBe(401);
+  service.db.run(
+    "UPDATE login_sessions SET expires_at=? WHERE user_id=?",
+    Date.now() - 1000,
+    "session-user",
+  );
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(401);
+  await configure();
+  handler = async () => {
+    new Sessions(service.db).revokeUser("dev-admin");
+    return { choices: [{ message: { content: "Do not save this" } }] };
+  };
+  expect(
+    (await mutate("post", "/api/chat", { message: "Long request" })).status,
+  ).toBe(401);
+  expect(service.db.all("SELECT * FROM conversations")).toHaveLength(0);
+});
+
+it("retains session registration across restart, and logout revokes a captured cookie", async () => {
+  const employee = await user("session-user");
+  await service.close();
+  service = await createApp({
+    database: join(root, "test.db"),
+    secret,
+    mode: "development",
+    secure: false,
+    adminGroup: "admins",
+    request: mockRequest,
+  });
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await request(service.app)
+        .post("/auth/logout")
+        .set("Cookie", employee.cookie)
+        .set("X-CSRF-Token", employee.csrf)
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(401);
+});
+it("passive checks do not mark an idle user active, and disabling then re-enabling does not restore their session", async () => {
+  const employee = await user("session-user");
+  const idle = Date.now() - 10 * 60000;
+  service.db.run(
+    "UPDATE login_sessions SET last_seen_at=? WHERE user_id=?",
+    idle,
+    "session-user",
+  );
+  expect(
+    (
+      await request(service.app)
+        .get("/api/session")
+        .set("Cookie", employee.cookie)
+    ).body.user.id,
+  ).toBe("session-user");
+  expect(
+    service.db.get(
+      "SELECT last_seen_at FROM login_sessions WHERE user_id=?",
+      "session-user",
+    )!.last_seen_at,
+  ).toBe(idle);
+  const profile = {
+    department: "",
+    job_title: "",
+    profile: "",
+    disabled: true,
+  };
+  expect(
+    (await mutate("put", "/api/admin/users/session-user", profile)).status,
+  ).toBe(200);
+  expect(
+    (
+      await mutate("put", "/api/admin/users/session-user", {
+        ...profile,
+        disabled: false,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await request(service.app)
+        .get("/api/workspace")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(401);
+});
 describe("authentication and settings", () => {
   it("enforces authentication, role checks, CSRF, logout, and cookie defaults", async () => {
     expect((await request(service.app).get("/api/workspace")).status).toBe(401);
