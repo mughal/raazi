@@ -17,10 +17,14 @@ printf ' <%s>' "$@" >> "$TEST_LOG"
 printf '\n' >> "$TEST_LOG"
 if [[ $1 == image && $2 == exists && ${MISSING_IMAGE:-} == "$3" ]]; then exit 1; fi
 if [[ $1 == image && $2 == inspect ]]; then echo "${RUNTIME_VERSION:-1}"; fi
+if [[ $1 == volume && $2 == exists && ${MISSING_VOLUME:-0} == 1 ]]; then exit 1; fi
+if [[ $1 == inspect ]]; then echo "${MOUNTED_VOLUME:-raazi-qa_postgres_data}"; fi
+if [[ $1 == ps && " $* " == *service=vectors* && ${VECTORS_EXIST:-0} == 1 ]]; then echo raazi-qa_vectors_1; fi
 if [[ $1 == ps && ${APP_RUNNING:-0} == 1 ]]; then echo raazi-qa_app_1; fi
 if [[ $1 == network && $2 == exists && ${MISSING_NETWORK:-0} == 1 ]]; then exit 1; fi
 if [[ $1 == compose && ${CONFIG_FAILURE:-0} == 1 && " $* " == *' config '* ]]; then exit 1; fi
-if [[ $1 == compose && ${DEPENDENCY_FAILURE:-0} == 1 && " $* " == *deploy/check-runtime.sh* ]]; then exit 1; fi
+if [[ $1 == compose && " $* " == *' run '* && " $* " == *deploy/check-runtime.sh* ]]; then echo 'Fixed-IP collision: do not use Compose run for preflight.' >&2; exit 126; fi
+if [[ $1 == run && ${DEPENDENCY_FAILURE:-0} == 1 && " $* " == *deploy/check-runtime.sh* ]]; then exit 1; fi
 MOCK
 cat > "$TEMP/bin/git" <<'MOCK'
 #!/usr/bin/env bash
@@ -57,11 +61,14 @@ contains '<image> <exists> <localhost/raazi:local>'
 contains '<image> <exists> <docker.io/pgvector/pgvector:0.8.6-pg17>'
 contains '<--env-file> <.env.qa>'
 contains '<up> <-d> <--no-build>'
-contains '<run> <--rm> <--no-deps> <app> <sh> <deploy/check-runtime.sh>'
+contains '<run> <--rm> <--pull=never> <--network> <none>'
+contains '<raazi-qa_app_modules:/app/node_modules:ro,z>'
+contains '<localhost/raazi:local> <sh> <deploy/check-runtime.sh>'
+absent '<--ip>'; absent '<--env-file> <.env.qa> <-f> <compose.production.yaml> <-f> <compose.podman.yaml> <run>'
 absent '<pull>'; absent '<build>'; absent '<down>'
 
 # Missing images, networks or invalid config must not stop a running deployment.
-for failure in image network config runtime dependencies; do
+for failure in image network config runtime dependencies volume; do
   reset_log
   case "$failure" in
     image) export MISSING_IMAGE=localhost/raazi:local ;;
@@ -69,15 +76,36 @@ for failure in image network config runtime dependencies; do
     config) export CONFIG_FAILURE=1 ;;
     runtime) export RUNTIME_VERSION=old ;;
     dependencies) export DEPENDENCY_FAILURE=1 ;;
+    volume) export MISSING_VOLUME=1 ;;
   esac
   must_fail ctl restart
   absent '<down>'; absent '<up>'; absent '<build>'; absent '<pull>'
-  unset MISSING_IMAGE MISSING_NETWORK CONFIG_FAILURE RUNTIME_VERSION DEPENDENCY_FAILURE
+  unset MISSING_IMAGE MISSING_NETWORK CONFIG_FAILURE RUNTIME_VERSION DEPENDENCY_FAILURE MISSING_VOLUME
 done
 
 # Restart validates before teardown. Stop never removes volumes.
 reset_log; ctl restart > /dev/null
 contains '<down>'; contains '<up> <-d> <--no-build>'; absent '<pull>'; absent '<build>'
+# Restart must validate offline even when the app already owns its fixed address.
+reset_log; export APP_RUNNING=1
+ctl restart > /dev/null
+contains '<--network> <none>'; contains '<down>'; contains '<up> <-d> <--no-build>'
+unset APP_RUNNING
+
+# External PostgreSQL storage preserves the old Compose name and never resets data.
+reset_log; ctl prepare volumes > /dev/null
+contains '<volume> <exists> <raazi-qa_postgres_data>'; absent '<create>'
+reset_log; export MISSING_VOLUME=1
+ctl prepare volumes > /dev/null
+contains '<volume> <create> <raazi-qa_postgres_data>'; absent '<pull>'; absent '<build>'; absent '<down>'
+reset_log; export VECTORS_EXIST=1
+must_fail ctl prepare volumes
+absent '<create>'; absent '<down>'
+unset MISSING_VOLUME VECTORS_EXIST
+reset_log; export VECTORS_EXIST=1 MOUNTED_VOLUME=other_postgres_data
+must_fail ctl restart
+absent '<down>'; absent '<up>'
+unset VECTORS_EXIST MOUNTED_VOLUME
 reset_log; ctl stop > /dev/null
 contains '<down>'; absent '<-v>'; absent '<--volumes>'
 

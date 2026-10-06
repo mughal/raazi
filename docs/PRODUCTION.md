@@ -60,6 +60,8 @@ docker compose --env-file .env.prod -f compose.production.yaml config --quiet
 # Prepare images explicitly before starting services.
 docker compose --env-file .env.prod -f compose.production.yaml -f compose.build.yaml build app
 docker compose --env-file .env.prod -f compose.production.yaml pull vectors
+# Create only for a new installation; existing deployments retain this volume.
+docker volume create raazi-production_postgres_data
 docker compose --env-file .env.prod -f compose.production.yaml up -d --no-build --pull never
 docker compose --env-file .env.prod -f compose.production.yaml ps
 docker compose --env-file .env.prod -f compose.production.yaml logs --tail=100 app

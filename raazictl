@@ -48,9 +48,18 @@ load_config() {
   export COMPOSE_PROJECT_NAME RAAZI_IMAGE_TAG INFERENCE_NETWORK
   APP_IMAGE="localhost/raazi:$RAAZI_IMAGE_TAG"
   VECTOR_IMAGE=docker.io/pgvector/pgvector:0.8.6-pg17
+  POSTGRES_VOLUME="${COMPOSE_PROJECT_NAME}_postgres_data"
 }
 compose() {
   podman compose --env-file "$ENV_FILE" -f compose.production.yaml -f compose.podman.yaml "$@"
+}
+prepare_volume() {
+  if podman volume exists "$POSTGRES_VOLUME"; then
+    echo "Preserved PostgreSQL volume: $POSTGRES_VOLUME"
+    return
+  fi
+  [[ -z $(podman ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter 'label=com.docker.compose.service=vectors' --format '{{.Names}}') ]] || fail "PostgreSQL already has a container but $POSTGRES_VOLUME is missing. Inspect its mounts before creating a volume; no data was changed."
+  podman volume create "$POSTGRES_VOLUME"
 }
 start_checks() {
   require_tool podman
@@ -61,8 +70,20 @@ start_checks() {
   [[ $missing == 0 ]] || fail 'Run raazictl prepare separately, or import the required images. Nothing was stopped, built, or downloaded.'
   [[ $(podman image inspect --format '{{ index .Labels "io.raazi.runtime" }}' "$APP_IMAGE") == 1 ]] || fail 'The old app image contains baked code. Run prepare app once to install the reusable runtime.'
   podman network exists "$INFERENCE_NETWORK" || fail "Missing network: $INFERENCE_NETWORK. Use the same Podman context as Aigate."
+  podman volume exists "$POSTGRES_VOLUME" || fail "Missing external PostgreSQL volume: $POSTGRES_VOLUME. For a new installation run prepare volumes. For an existing installation inspect the database container mounts first. Nothing was stopped."
+  local database_container mounted_volume
+  for database_container in $(podman ps -a --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter 'label=com.docker.compose.service=vectors' --format '{{.ID}}'); do
+    mounted_volume=$(podman inspect --format '{{range .Mounts}}{{if eq .Destination "/var/lib/postgresql/data"}}{{.Name}}{{end}}{{end}}' "$database_container")
+    [[ $mounted_volume == "$POSTGRES_VOLUME" ]] || fail "Existing PostgreSQL mounts '$mounted_volume', expected '$POSTGRES_VOLUME'. Resolve the volume name before restarting; nothing was stopped."
+  done
   compose config --quiet
-  compose run --rm --no-deps app sh deploy/check-runtime.sh
+  # Compose run inherits the app's fixed IP, which a running app already owns.
+  # This check needs only source/dependencies, never a service network or secrets.
+  podman run --rm --pull=never --network none --workdir /app \
+    --security-opt no-new-privileges --cap-drop ALL \
+    --volume "$ROOT:/app:ro,z" \
+    --volume "${COMPOSE_PROJECT_NAME}_app_modules:/app/node_modules:ro,z" \
+    "$APP_IMAGE" sh deploy/check-runtime.sh
 }
 start_services() { compose up -d --no-build; }
 
@@ -88,11 +109,12 @@ case "$command" in
     echo 'Code updated. Run restart to compile and run the mounted code. No image rebuild is needed for ordinary code changes. If dependencies changed, stop and run prepare deps first.'
     ;;
   prepare)
-    [[ $# -le 1 ]] || fail 'Usage: bash raazictl prepare [all|app|vectors|deps]'
+    [[ $# -le 1 ]] || fail 'Usage: bash raazictl prepare [all|app|vectors|deps|volumes]'
     target=${1:-all}
-    [[ $target == all || $target == app || $target == vectors || $target == deps ]] || fail 'Choose all, app, vectors, or deps.'
+    [[ $target == all || $target == app || $target == vectors || $target == deps || $target == volumes ]] || fail 'Choose all, app, vectors, deps, or volumes.'
     load_config
     require_tool podman
+    if [[ $target == all || $target == volumes ]]; then prepare_volume; fi
     if [[ $target == all || $target == vectors ]]; then podman pull "$VECTOR_IMAGE"; fi
     if [[ $target == all || $target == app ]]; then
       podman build --pull=missing --tag "$APP_IMAGE" --file Dockerfile .
@@ -131,6 +153,7 @@ case "$command" in
     for image in "$APP_IMAGE" "$VECTOR_IMAGE"; do
       if podman image exists "$image"; then echo "Image ready: $image"; else echo "Image missing: $image"; fi
     done
+    if podman volume exists "$POSTGRES_VOLUME"; then echo "PostgreSQL volume ready (external): $POSTGRES_VOLUME"; else echo "PostgreSQL volume missing: $POSTGRES_VOLUME"; fi
     ;;
   logs)
     [[ $# -le 1 ]] || fail 'Usage: bash raazictl logs [app|vectors]'
@@ -145,7 +168,7 @@ case "$command" in
 Usage: bash raazictl [--env qa|prod] COMMAND
   init                      Copy a missing sample to .env.qa (or .env.prod).
   update                    Fast-forward the current branch from its upstream.
-  prepare [all|app|vectors|deps] Prepare runtime images or changed dependencies.
+  prepare [all|app|vectors|deps|volumes] Prepare images, dependencies or PostgreSQL volume.
   start                     Compile mounted code and start; no image build/download.
   status                    Show this project's containers and required images.
   stop                      Compose down; preserve persistent volumes.

@@ -37,6 +37,18 @@ See the [official OpenAI Chat Completions reference](https://developers.openai.c
 
 ## Configure S3 object storage
 
+For Huawei OceanStor Pacific, request these details from the storage admin:
+
+- The S3 data-service HTTPS endpoint, including FQDN and port. Do not use the management-console URL. Confirm DNS and firewall access from the Raazi host/container network.
+- A private QA bucket and a separate production bucket, with the exact bucket names and tenant/account context.
+- A dedicated application's object-user access key ID (AK) and secret access key (SK), delivered through an approved private channel. No storage administrator credential is needed. Huawei describes AK/SK authentication in its [Pacific integration guide](https://info.support.huawei.com/storage/docs/en-us/oceanstor-6.1.5/smartmobility-userguide/en-us_topic_0000001463754568.html).
+- The region/signing value required for AWS Signature Version 4, and confirmation of S3 V4 and path-style compatibility. Do not assume the region from the appliance location or cloud examples.
+- Bucket access checks and object put, get, and delete permissions under the application's prefix, including temporary `_checks/` objects. For versioned buckets, permit retrieval and deletion of the referenced version. The app does not need bucket creation or administrator access.
+- The trusted CA chain in PEM format if the endpoint uses a private CA. The endpoint hostname must match its certificate. Configure Node trust through `NODE_EXTRA_CA_CERTS` and a mounted certificate file as described in the production guide.
+- Quota, backup/restore, retention, encryption, and versioning policies. Ensure retention locks do not block the application's required deletes or temporary bucket tests. Do not expire objects still referenced by saved chats or documents.
+
+The exact Pacific software version and enabled S3 feature set are useful for compatibility checks. Enter the endpoint, region, bucket, AK/SK, and prefix in **Administration → Storage**, then use **Test bucket**. Raazi uses single-object writes with Content-MD5 and AWS V4 signing. A successful test checks access, write, read, and delete, but does not prove backup/restore or every appliance feature.
+
 Use **Administration → Storage**. Raazi supports an S3-compatible endpoint, including a suitably configured Huawei OceanStor Pacific service.
 
 1. Create a private bucket on the storage service.

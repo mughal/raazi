@@ -8,6 +8,15 @@ QA selects `RAAZI_APP_IP=192.168.10.40` and `RAAZI_POSTGRES_IP=192.168.10.41`. T
 
 ## Prepare configuration
 
+PostgreSQL data uses an external named volume. With the QA sample, its name is `raazi-qa_postgres_data`; production uses `raazi-production_postgres_data`. The naming matches the earlier Compose-managed volumes, so no copy or migration is needed when the project name is unchanged. Before updating an existing installation, inspect the actual mount:
+
+```bash
+podman inspect raazi-qa_vectors_1 --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}'
+podman volume inspect raazi-qa_postgres_data
+```
+
+Confirm that this volume is mounted at `/var/lib/postgresql/data`. If the name differs, preserve that volume and resolve the naming before restarting. Do not create an empty replacement. For a new installation, `bash raazictl prepare volumes` explicitly creates the external volume; `prepare` also includes this step. Existing volumes are retained. Start/restart fails if external storage is missing. Compose does not delete external volumes, but manual deletion or pruning can still remove storage. Backups remain required.
+
 Install Podman and a Compose provider such as `podman-compose`. `podman compose` calls an external provider. See the [Podman Compose reference](https://docs.podman.io/en/latest/markdown/podman-compose.1.html).
 
 From the existing checkout:
@@ -55,6 +64,8 @@ Only `prepare` builds or downloads images. It pulls pgvector and builds a reusab
 The pgvector image already contains PostgreSQL 17; no separate PostgreSQL image is needed. The Node builder uses HTTPS Debian sources with certificate and repository-signature verification. An APT `NOSPLIT` response can indicate a proxy or network login page replacing HTTP metadata. If HTTPS still fails, verify the host's proxy access and organizational CA requirements. Do not disable verification. Retry only the app with `bash raazictl prepare app` after correcting connectivity.
 
 `start` checks both local images, the inference network, and Compose configuration before `up -d --no-build`. The runtime Compose files contain no build recipe; the Podman overlay sets both pull policies to `never`. Missing prerequisites fail without downloading or building. Use a provider that supports pull policies and the health-check dependency.
+
+Dependency preflight uses a temporary container with `--network none` and `--pull=never`. It reads only the checkout and cached dependency volume; it does not inherit the app's fixed IP or secrets. This permits checks while the app still owns its address. Do not use `compose run app` for this check.
 
 `stop` uses Compose `down` without removing volumes. `restart` checks prerequisites before taking services down, then brings them up from existing images. The image runs as UID 1000. The checkout is mounted read-only; source changes are compiled into a named output volume at startup. Dependencies and npm cache use separate named volumes. Startup never installs packages. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.
 

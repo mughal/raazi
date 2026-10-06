@@ -25,7 +25,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - .:/app:ro,z
-      - app_modules:/app/node_modules
+      - app_modules:/app/node_modules:z
       - app_dist:/app/dist
       - app_npm_cache:/home/node/.npm
       - app_data:/app/data
@@ -79,3 +79,5 @@ volumes:
   app_npm_cache:
   app_data:
   postgres_data:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME:-raazi-production}_postgres_data
