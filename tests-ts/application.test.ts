@@ -1835,3 +1835,34 @@ it("strict vector retrieval drops unrelated sections below its cosine threshold"
   expect(response.body.content).toContain("couldn't find relevant information");
   expect(response.body.sources).toEqual([]);
 });
+
+it("indexes large documents using batches within Aigate's 16-text limit", async () => {
+  const rid = await repo();
+  await mutate("put", "/api/admin/embeddings", {
+    enabled: true,
+    base_url: "http://embed.test/v1",
+    model: "embed",
+    dimensions: 3,
+  });
+  const sizes: number[] = [];
+  handler = async (url, body: any) => {
+    if (url.endsWith("/embeddings")) {
+      sizes.push(body.input.length);
+      if (body.input.length > 16)
+        throw new Error("Gateway rejects more than 16 texts");
+    }
+    return mockRequest(url, body);
+  };
+  const uploaded = await mutate("post", "/api/admin/documents", {
+    repository_id: rid,
+    title: "Large manual",
+    content: "Annual leave allowance is 25 days. ".repeat(2000),
+  });
+  expect(uploaded.status).toBe(201);
+  expect(sizes.length).toBeGreaterThan(1);
+  expect(Math.max(...sizes)).toBe(16);
+  const doc = service.knowledge.documents()[0];
+  expect(doc.status).toBe("ready");
+  expect(doc.index_completed).toBe(doc.index_total);
+  expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(doc.index_total);
+});

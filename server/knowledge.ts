@@ -243,8 +243,8 @@ export async function embeddings(
 ) {
   const vectors: number[][] = [];
   try {
-    for (let n = 0; n < texts.length; n += 32) {
-      const batch = texts.slice(n, n + 32),
+    for (let n = 0; n < texts.length; n += 16) {
+      const batch = texts.slice(n, n + 16),
         response = await request(
           s.embedding_url + "/embeddings",
           { model: s.embedding_model, input: batch, encoding_format: "float" },
