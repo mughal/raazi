@@ -16,8 +16,11 @@ printf 'podman' >> "$TEST_LOG"
 printf ' <%s>' "$@" >> "$TEST_LOG"
 printf '\n' >> "$TEST_LOG"
 if [[ $1 == image && $2 == exists && ${MISSING_IMAGE:-} == "$3" ]]; then exit 1; fi
+if [[ $1 == image && $2 == inspect ]]; then echo "${RUNTIME_VERSION:-1}"; fi
+if [[ $1 == ps && ${APP_RUNNING:-0} == 1 ]]; then echo raazi-qa_app_1; fi
 if [[ $1 == network && $2 == exists && ${MISSING_NETWORK:-0} == 1 ]]; then exit 1; fi
 if [[ $1 == compose && ${CONFIG_FAILURE:-0} == 1 && " $* " == *' config '* ]]; then exit 1; fi
+if [[ $1 == compose && ${DEPENDENCY_FAILURE:-0} == 1 && " $* " == *deploy/check-runtime.sh* ]]; then exit 1; fi
 MOCK
 cat > "$TEMP/bin/git" <<'MOCK'
 #!/usr/bin/env bash
@@ -54,19 +57,22 @@ contains '<image> <exists> <localhost/raazi:local>'
 contains '<image> <exists> <docker.io/pgvector/pgvector:0.8.6-pg17>'
 contains '<--env-file> <.env.qa>'
 contains '<up> <-d> <--no-build>'
+contains '<run> <--rm> <--no-deps> <app> <sh> <deploy/check-runtime.sh>'
 absent '<pull>'; absent '<build>'; absent '<down>'
 
 # Missing images, networks or invalid config must not stop a running deployment.
-for failure in image network config; do
+for failure in image network config runtime dependencies; do
   reset_log
   case "$failure" in
     image) export MISSING_IMAGE=localhost/raazi:local ;;
     network) export MISSING_NETWORK=1 ;;
     config) export CONFIG_FAILURE=1 ;;
+    runtime) export RUNTIME_VERSION=old ;;
+    dependencies) export DEPENDENCY_FAILURE=1 ;;
   esac
   must_fail ctl restart
   absent '<down>'; absent '<up>'; absent '<build>'; absent '<pull>'
-  unset MISSING_IMAGE MISSING_NETWORK CONFIG_FAILURE
+  unset MISSING_IMAGE MISSING_NETWORK CONFIG_FAILURE RUNTIME_VERSION DEPENDENCY_FAILURE
 done
 
 # Restart validates before teardown. Stop never removes volumes.
@@ -78,12 +84,19 @@ contains '<down>'; absent '<-v>'; absent '<--volumes>'
 # Preparation is the sole image-download/build path and starts no services.
 reset_log; ctl prepare > /dev/null
 contains '<pull> <docker.io/pgvector/pgvector:0.8.6-pg17>'
-contains '<build> <--label> <io.raazi.revision=test-revision>'
+contains '<build> <--pull=missing> <--tag> <localhost/raazi:local>'
 absent '<up>'; absent '<down>'
 reset_log; ctl prepare vectors > /dev/null
 contains '<pull>'; absent '<build>'
 reset_log; ctl prepare app > /dev/null
 contains '<build>'; absent '<pull>'
+reset_log; ctl prepare deps > /dev/null
+contains '<run> <--rm> <--no-deps> <app> <sh> <deploy/prepare-runtime.sh>'
+absent '<up>'; absent '<down>'; absent '<build>'; absent '<pull>'
+reset_log; export APP_RUNNING=1
+must_fail ctl prepare deps
+absent '<run>'; absent '<down>'
+unset APP_RUNNING
 
 # Update only fast-forwards Git. It refuses dirty/detached/untracked branches.
 reset_log; ctl update > /dev/null
@@ -133,4 +146,33 @@ grep -Fx '  default:' "$ROOT/compose.podman.yaml" > /dev/null
 if grep -Eq '^[[:space:]]+build:' "$ROOT/compose.production.yaml" "$ROOT/compose.podman.yaml"; then
   echo 'Runtime Compose files contain a build recipe' >&2; exit 1
 fi
-echo 'raazictl contract checks passed (mocked Git and Podman; no live services).'
+# Exercise the actual runtime scripts in an isolated checkout, with mocked npm/Node.
+export TEST_WORK="$TEMP/runtime"
+mkdir -p "$TEST_WORK/deploy" "$TEST_WORK/node_modules/typescript/bin"
+printf '{}' > "$TEST_WORK/package.json"
+printf '{}' > "$TEST_WORK/package-lock.json"
+touch "$TEST_WORK/node_modules/typescript/bin/tsc"
+for script in check-runtime start-runtime prepare-runtime; do
+  sed 's|cd /app|cd "$TEST_WORK"|' "$ROOT/deploy/$script.sh" > "$TEST_WORK/deploy/$script.sh"
+done
+cat > "$TEMP/bin/npm" <<'MOCK'
+#!/usr/bin/env bash
+printf 'npm <%s> <%s>\n' "$1" "$2" >> "$TEST_LOG"
+MOCK
+cat > "$TEMP/bin/node" <<'MOCK'
+#!/usr/bin/env bash
+printf 'node <%s>\n' "$1" >> "$TEST_LOG"
+MOCK
+chmod +x "$TEMP/bin/npm" "$TEMP/bin/node"
+(cd "$TEST_WORK"; sha256sum package.json package-lock.json > node_modules/.raazi-dependencies)
+reset_log
+sh "$TEST_WORK/deploy/start-runtime.sh" > /dev/null
+contains 'npm <run> <build>'; contains 'node <dist/server/index.js>'; absent 'npm <ci>'
+printf '{"changed":true}' > "$TEST_WORK/package-lock.json"
+reset_log; must_fail sh "$TEST_WORK/deploy/start-runtime.sh"
+absent 'npm'; absent 'node'
+sh "$TEST_WORK/deploy/prepare-runtime.sh" > /dev/null
+contains 'npm <ci> <--include=dev>'
+reset_log; sh "$TEST_WORK/deploy/start-runtime.sh" > /dev/null
+contains 'npm <run> <build>'; absent 'npm <ci>'
+echo 'raazictl and runtime contract checks passed (mocked Git, Podman, npm and Node; no live services).'

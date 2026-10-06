@@ -50,24 +50,22 @@ bash raazictl status
 bash raazictl logs app
 ```
 
-Only `prepare` builds or downloads images. It pulls pgvector and builds the app. The initial build needs access to the image registry, Debian packages, and npm. Use `prepare app` to rebuild only Raazi or `prepare vectors` to download only PostgreSQL. Imported images can also satisfy startup checks. Preparation does not stop or start services.
+Only `prepare` builds or downloads images. It pulls pgvector and builds a reusable Node runtime with cached Linux dependencies. The initial build needs access to the image registry, Debian packages, and npm. Use `prepare app` for the initial runtime or a runtime/toolchain change, `prepare vectors` for PostgreSQL, and `prepare deps` for a changed package manifest or lock file. Imported images can also satisfy startup checks. Preparation does not stop or start services.
 
 The pgvector image already contains PostgreSQL 17; no separate PostgreSQL image is needed. The Node builder uses HTTPS Debian sources with certificate and repository-signature verification. An APT `NOSPLIT` response can indicate a proxy or network login page replacing HTTP metadata. If HTTPS still fails, verify the host's proxy access and organizational CA requirements. Do not disable verification. Retry only the app with `bash raazictl prepare app` after correcting connectivity.
 
 `start` checks both local images, the inference network, and Compose configuration before `up -d --no-build`. The runtime Compose files contain no build recipe; the Podman overlay sets both pull policies to `never`. Missing prerequisites fail without downloading or building. Use a provider that supports pull policies and the health-check dependency.
 
-`stop` uses Compose `down` without removing volumes. `restart` checks prerequisites before taking services down, then brings them up from existing images. The image runs as UID 1000. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.
+`stop` uses Compose `down` without removing volumes. `restart` checks prerequisites before taking services down, then brings them up from existing images. The image runs as UID 1000. The checkout is mounted read-only; source changes are compiled into a named output volume at startup. Dependencies and npm cache use separate named volumes. Startup never installs packages. Named volumes preserve SQLite and PostgreSQL across container replacement. An existing app volume must permit UID 1000 to write its directory. Do not run `down -v`.
 
 For updates:
 
 ```bash
 bash raazictl update
-# If application code changed, prepare its image explicitly before restarting.
-bash raazictl prepare app
 bash raazictl restart
 ```
 
-`update` uses `git pull --ff-only` on the current branch and upstream. A GitLab clone normally tracks GitLab as `origin`. Dirty, detached, or untracked checkouts stop with a clear message. No reset, stash, environment overwrite, image preparation, or service restart happens during update. Git changes alone do not change the running image.
+`update` uses `git pull --ff-only` on the current branch and upstream. A GitLab clone normally tracks GitLab as `origin`. Dirty, detached, or untracked checkouts stop with a clear message. No reset, stash, environment overwrite, image preparation, or service restart happens during update. Restart compiles and runs the mounted checkout. `start` on an already running container does not reload code; use `restart` after updates.
 
 To use the short command from any directory, install a symlink once:
 
@@ -80,7 +78,31 @@ raazictl --env prod status
 
 If that link already exists, inspect it instead of replacing it. You can always use `bash /opt/rnd/raazi/raazictl status` without the link.
 
-Set `RAAZI_IMAGE_TAG` to the reviewed release commit. Keep the same Compose project and Podman context when updating, so the volumes remain attached.
+Keep `RAAZI_IMAGE_TAG` stable for the reusable runtime. Record the deployed Git commit separately. Keep the same Compose project and Podman context when updating, so the volumes remain attached.
+
+## Adopt the reusable runtime
+
+Existing installations need one runtime image rebuild. Preserve the project name, secrets, and data volumes:
+
+```bash
+bash raazictl update
+bash raazictl prepare app
+bash raazictl restart
+```
+
+`prepare app` uses a cached Node base image when present (`--pull=missing`). Later ordinary code updates need only `update` and `restart`. TypeScript and React still need compilation, which occurs at startup with cached tools. Compilation failure leaves the app stopped and reports the error in logs.
+
+If `package.json` or `package-lock.json` changes, the dependency check stops restart before existing services go down. Install the changed dependencies explicitly:
+
+```bash
+bash raazictl stop
+bash raazictl prepare deps
+bash raazictl start
+```
+
+Dependency preparation can need npm network access. It refuses to run while this project's app container is running. Rebuild the runtime image only when Node, operating-system packages, or native build tools need changing. After a Node ABI change, refresh dependencies too. Do not remove `app_data` or `postgres_data` to refresh dependencies.
+
+The source mount uses shared SELinux relabeling (`:ro,z`). The checkout must be readable by UID 1000. Dependency and output volumes must be writable by UID 1000; fresh volumes inherit image directory ownership. Keep QA and production in separate checkouts if they need different code revisions. Each checkout uses its own project-scoped caches.
 
 ## HTTPS and inference
 

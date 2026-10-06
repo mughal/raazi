@@ -6,7 +6,7 @@ Updated: 6 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before con
 
 Raazi is an SNGPL-branded enterprise chat and knowledge workspace. The product name remains Raazi. Other names were discussed, but no rename was agreed.
 
-The application uses React and TypeScript in the browser. Express and TypeScript run on Node.js. The earlier Python/Flask implementation is retained in Git history only. Python in the Docker build installs native Node dependencies; it does not run the application.
+The application uses React and TypeScript in the browser. Express and TypeScript run on Node.js. The earlier Python/Flask implementation is retained in Git history only. Python, make, and g++ support native Node dependency installation in the reusable runtime image; Node runs the application.
 
 The image builder fetches Debian packages over HTTPS. If the slim base lacks an APT CA bundle, it seeds one from Node's bundled public roots before installing system CA certificates. TLS and Debian signature verification remain enabled. This avoids HTTP metadata interception but does not authenticate to an organizational proxy.
 
@@ -149,7 +149,7 @@ Deployment configuration uses tracked `env.sample.qa` and `env.sample.prod` temp
 
 The Podman overlay declares both the project-scoped `default` bridge and the external inference network. Explicit declaration avoids `podman-compose` rejecting referenced networks during config parsing.
 
-`raazictl` controls Podman deployments, defaulting to QA. Only explicit `prepare` downloads pgvector or builds the application image. Runtime Compose files contain no build recipe, and the Podman overlay forbids image pulls. Start/restart preflight checks local images, the inference network, and configuration. Stop preserves named volumes. Update fast-forwards the current Git upstream without changing services or environment files. Shell contract tests use mocked Podman and Git; Linux behavior still needs target-host verification.
+`raazictl` controls Podman deployments, defaulting to QA. Only explicit `prepare` downloads pgvector, builds the reusable runtime image, or installs changed dependencies. The checkout is mounted read-only at `/app`; project-scoped dependency, compiled-output, and npm-cache volumes overlay it. Existing `app_data` and `postgres_data` names are preserved. Startup checks dependency hashes before compiling the mounted code. The controller runs the same check before restart teardown. Ordinary updates require no image rebuild. Old baked-code images are rejected with one-time migration instructions. Runtime Compose files contain no build recipe, and the Podman overlay forbids image pulls. Start/restart preflight checks local images, the inference network, and configuration. Stop preserves named volumes. Update fast-forwards the current Git upstream without changing services or environment files. Shell contract tests use mocked Podman and Git; Linux behavior still needs target-host verification.
 
 Linux Podman uses `compose.production.yaml` plus `compose.podman.yaml`. Both services join Aigate's external `podnet10` network and the application network. QA selects fixed bridge addresses `.40` for Raazi and `.41` for PostgreSQL; the production sample selects `.42` and `.43`. The addresses are configurable through `RAAZI_APP_IP` and `RAAZI_POSTGRES_IP`. PostgreSQL is reachable on the shared bridge but has no host-published port. Models and S3 remain external services configured in the GUI. `docs/PODMAN.md` describes `/opt/rnd/raazi` setup and the root systemd unit.
 

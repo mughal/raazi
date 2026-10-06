@@ -59,8 +59,10 @@ start_checks() {
     if ! podman image exists "$image"; then echo "Missing local image: $image" >&2; missing=1; fi
   done
   [[ $missing == 0 ]] || fail 'Run raazictl prepare separately, or import the required images. Nothing was stopped, built, or downloaded.'
+  [[ $(podman image inspect --format '{{ index .Labels "io.raazi.runtime" }}' "$APP_IMAGE") == 1 ]] || fail 'The old app image contains baked code. Run prepare app once to install the reusable runtime.'
   podman network exists "$INFERENCE_NETWORK" || fail "Missing network: $INFERENCE_NETWORK. Use the same Podman context as Aigate."
   compose config --quiet
+  compose run --rm --no-deps app sh deploy/check-runtime.sh
 }
 start_services() { compose up -d --no-build; }
 
@@ -83,20 +85,26 @@ case "$command" in
     upstream=$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}') || fail "Branch $branch has no upstream. Set its GitLab tracking branch first."
     echo "Fast-forwarding $branch from $upstream."
     git pull --ff-only
-    echo 'Code updated. Services and environment files were not changed. Run prepare separately to rebuild changed application code before restart.'
+    echo 'Code updated. Run restart to compile and run the mounted code. No image rebuild is needed for ordinary code changes. If dependencies changed, stop and run prepare deps first.'
     ;;
   prepare)
-    [[ $# -le 1 ]] || fail 'Usage: bash raazictl prepare [all|app|vectors]'
+    [[ $# -le 1 ]] || fail 'Usage: bash raazictl prepare [all|app|vectors|deps]'
     target=${1:-all}
-    [[ $target == all || $target == app || $target == vectors ]] || fail 'Choose all, app, or vectors.'
+    [[ $target == all || $target == app || $target == vectors || $target == deps ]] || fail 'Choose all, app, vectors, or deps.'
     load_config
     require_tool podman
     if [[ $target == all || $target == vectors ]]; then podman pull "$VECTOR_IMAGE"; fi
     if [[ $target == all || $target == app ]]; then
-      require_tool git
-      podman build --label "io.raazi.revision=$(git rev-parse HEAD)" --tag "$APP_IMAGE" --file Dockerfile .
+      podman build --pull=missing --tag "$APP_IMAGE" --file Dockerfile .
     fi
-    echo 'Image preparation complete. Services were not started or stopped.'
+    if [[ $target == deps ]]; then
+      [[ -z $(podman ps --filter "label=com.docker.compose.project=$COMPOSE_PROJECT_NAME" --filter 'label=com.docker.compose.service=app' --format '{{.Names}}') ]] || fail 'Stop Raazi before changing its shared dependency volume. No services were stopped.'
+      podman image exists "$APP_IMAGE" || fail 'Missing runtime image. Run prepare app first.'
+      [[ $(podman image inspect --format '{{ index .Labels "io.raazi.runtime" }}' "$APP_IMAGE") == 1 ]] || fail 'Run prepare app once to install the reusable runtime.'
+      compose config --quiet
+      compose run --rm --no-deps app sh deploy/prepare-runtime.sh
+    fi
+    echo 'Preparation complete. Services were not started or stopped.'
     ;;
   start|restart)
     no_args "$@"
@@ -137,8 +145,8 @@ case "$command" in
 Usage: bash raazictl [--env qa|prod] COMMAND
   init                      Copy a missing sample to .env.qa (or .env.prod).
   update                    Fast-forward the current branch from its upstream.
-  prepare [all|app|vectors]  Explicitly build the app and/or download pgvector.
-  start                     Start prepared images; no build or download.
+  prepare [all|app|vectors|deps] Prepare runtime images or changed dependencies.
+  start                     Compile mounted code and start; no image build/download.
   status                    Show this project's containers and required images.
   stop                      Compose down; preserve persistent volumes.
   restart                   Check prerequisites, then down/up existing images.
@@ -146,7 +154,7 @@ Usage: bash raazictl [--env qa|prod] COMMAND
 
 QA is the default. Example: bash raazictl --env prod start
 Run from any directory: bash /opt/rnd/raazi/raazictl status
-Update never restarts services. Only prepare builds or downloads images.
+Update never restarts services. Only prepare builds/downloads images or installs dependencies.
 HELP
     ;;
   *) fail "Unknown command: $command. Run bash raazictl help." ;;

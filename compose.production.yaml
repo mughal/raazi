@@ -24,7 +24,12 @@ services:
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
+      - .:/app:ro,z
+      - app_modules:/app/node_modules
+      - app_dist:/app/dist
+      - app_npm_cache:/home/node/.npm
       - app_data:/app/data
+    command: ["sh", "deploy/start-runtime.sh"]
     depends_on:
       vectors:
         condition: service_healthy
@@ -38,7 +43,7 @@ services:
         ]
       interval: 30s
       timeout: 5s
-      start_period: 30s
+      start_period: 120s
       retries: 3
     restart: unless-stopped
     stop_grace_period: 150s
@@ -69,5 +74,8 @@ services:
       options:
         max-size: "10m"
 volumes:
+  app_modules:
+  app_dist:
+  app_npm_cache:
   app_data:
   postgres_data:

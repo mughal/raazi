@@ -33,7 +33,7 @@ Direct LDAP sign-in and integrated Windows authentication are not available. See
 3. Copy `env.sample.prod` to `.env.prod`.
 4. Fill every required value.
 5. Restrict file access to the deployment account.
-6. Set `RAAZI_IMAGE_TAG` to the release commit.
+6. Keep a stable `RAAZI_IMAGE_TAG` for the reusable runtime. Record the application Git commit separately.
 
 Generate separate random signing and encryption keys for a new installation. See the operations guide.
 
@@ -71,7 +71,7 @@ For Podman, use `bash raazictl prepare` and then `bash raazictl start`. QA is th
 
 The HTTP health check tests the app response. It does not test the identity provider, models, S3 bucket, or all database operations.
 
-Image building needs access to the Node image, system build packages, and npm packages. Python is a native-module build tool in the builder stage. The final application runtime uses Node.js.
+Image building needs access to the Node image, system build packages, and npm packages. The reusable image includes native build tools and cached dependencies. The checkout is mounted read-only, and startup compiles TypeScript and React into a named volume before running Node.js. Normal startup does not install packages.
 
 ## Enable HTTPS
 
@@ -124,7 +124,7 @@ If history is still in SQLite, the first configured PostgreSQL startup imports i
 
 Use an approved backup schedule. Back up SQLite, PostgreSQL, S3 originals, and keys. Test a restore.
 
-Record the release commit. Build a candidate image and test it in staging. Back up before you update production. Keep the prior image and matching backup for rollback.
+Record the release commit and test the mounted-code update in staging. Back up before production updates. Ordinary code changes require a Git fast-forward and restart, not an image rebuild. Package changes require a stopped app and explicit dependency preparation. Rollback requires the prior checkout, matching dependencies, and any required data backup; the reusable runtime image alone does not contain the release.
 
 Named volumes are not backups. Do not run `docker compose down -v` on production. It removes persistent data.
 
