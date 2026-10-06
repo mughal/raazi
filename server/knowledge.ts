@@ -676,6 +676,45 @@ export class Knowledge {
       url: "/sources/" + r.id,
     }));
   }
+  overview(repos: number[]) {
+    if (!repos.length) return [];
+    const marks = repos.map(() => "?").join(",");
+    const rows = this.db.all(
+      `SELECT p.*,d.title,d.filename FROM passages p JOIN documents d ON d.id=p.doc_id WHERE d.status='ready' AND d.indexed_signature=? AND p.repo_id IN (${marks}) ORDER BY d.id,p.page,p.rowid`,
+      signature(this.settings()),
+      ...repos,
+    );
+    const groups = new Map<number, Row[]>();
+    for (const row of rows) {
+      const group = groups.get(row.doc_id) ?? [];
+      group.push(row);
+      groups.set(row.doc_id, group);
+    }
+    const samples = [...groups.values()]
+      .slice(0, 8)
+      .map((group) => [
+        group[0],
+        group[Math.floor(group.length / 2)],
+        group[group.length - 1],
+      ]);
+    const selected: Row[] = [];
+    for (let n = 0; n < 3; n++)
+      for (const sample of samples)
+        if (!selected.some((row) => row.id === sample[n].id))
+          selected.push(sample[n]);
+    return selected
+      .slice(0, 12)
+      .map((r) => ({
+        source_id: r.id,
+        document_id: r.doc_id,
+        title: r.title,
+        content: r.content,
+        page: r.page,
+        label: r.label,
+        filename: r.filename,
+        url: "/sources/" + r.id,
+      }));
+  }
   documents() {
     return this.db.all(
       "SELECT id,repo_id,title,length(content) AS size,status,error,warning,index_stage,index_completed,index_total FROM documents ORDER BY id DESC",

@@ -1799,7 +1799,9 @@ it("repository-only answers abstain without hits, stale indexes, or verified evi
     repository_id: rid,
     use_decision: true,
   });
-  expect(refused.body.content).toContain("couldn't find relevant information");
+  expect(refused.body.content).toContain(
+    "model did not return an answer with verifiable evidence",
+  );
   expect(refused.body.sources).toEqual([]);
   handler = mockRequest;
   const grounded = await mutate("post", "/api/chat", {
@@ -1932,4 +1934,53 @@ it("recognizes Aigate's minute rate limit without exposing its response body", a
       "Inference endpoint returned HTTP 429.",
     );
   }
+});
+
+it("accepts fenced grounded JSON and whitespace differences, and summarizes repository excerpts", async () => {
+  await configure();
+  const rid = await repo();
+  await addDoc(rid);
+  handler = async () => ({
+    choices: [
+      {
+        message: {
+          content:
+            "```json\n" +
+            JSON.stringify({
+              answerable: true,
+              answer: "Annual leave is 25 days [1].",
+              evidence: [
+                { source: 1, quote: "Annual   leave allowance is 25 days." },
+              ],
+            }) +
+            "\n```",
+        },
+      },
+    ],
+  });
+  const answer = await mutate("post", "/api/chat", {
+    message: "leave",
+    repository_id: rid,
+  });
+  expect(answer.body.content).toBe("Annual leave is 25 days [1].");
+  expect(answer.body.sources).toHaveLength(1);
+  const overview = await mutate("post", "/api/chat", {
+    message: "summarize the manuals",
+    repository_id: rid,
+  });
+  expect(overview.body.content).toContain(
+    "Overview based on selected excerpts",
+  );
+  expect(overview.body.sources).toHaveLength(1);
+  handler = async () => ({
+    choices: [{ message: { content: JSON.stringify({ answerable: false }) } }],
+  });
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "leave",
+        repository_id: rid,
+      })
+    ).body.content,
+  ).toContain("couldn't find relevant information");
 });

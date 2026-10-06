@@ -838,16 +838,23 @@ export async function createApp(config: Config) {
     const privateSources = strictKnowledge
       ? []
       : await attachments.retrieve(user.id, data.message, privateIds);
-    let sources = [
-      ...privateSources,
-      ...(routeAction === "direct"
-        ? []
-        : await knowledge.retrieve(
-            data.message,
-            repos,
-            strictKnowledge ? 0.35 : -1,
-          )),
-    ].slice(0, 8);
+    const repositoryOverview =
+      strictKnowledge &&
+      /^(?:please\s+)?(?:summari[sz]e|give (?:me )?(?:an? )?(?:overview|summary))(?:\s+(?:of|the|these|all|department|uploaded|our|my))*\s*(?:manuals|documents|knowledge base|repository)[.!?\s]*$/i.test(
+        data.message.trim(),
+      );
+    let sources = repositoryOverview
+      ? knowledge.overview(repos)
+      : [
+          ...privateSources,
+          ...(routeAction === "direct"
+            ? []
+            : await knowledge.retrieve(
+                data.message,
+                repos,
+                strictKnowledge ? 0.35 : -1,
+              )),
+        ].slice(0, 8);
     if (strictKnowledge && !sources.length) {
       await knowledgeReply(noEvidence);
       return;
@@ -933,10 +940,22 @@ export async function createApp(config: Config) {
               )
               .min(1),
           })
-          .parse(JSON.parse(answer));
+          .parse(
+            JSON.parse(
+              answer.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1"),
+            ),
+          );
+        const normalizeEvidence = (text: string) =>
+          text.normalize("NFKC").replace(/\s+/g, " ").trim();
         const verified = new Set(
           grounded.evidence
-            .filter((e) => sources[e.source - 1]?.content.includes(e.quote))
+            .filter(
+              (e) =>
+                sources[e.source - 1] &&
+                normalizeEvidence(sources[e.source - 1].content).includes(
+                  normalizeEvidence(e.quote),
+                ),
+            )
             .map((e) => e.source),
         );
         const cited = [...grounded.answer.matchAll(/\[(\d+)\]/g)].map((m) =>
@@ -948,9 +967,23 @@ export async function createApp(config: Config) {
           cited.some((n) => !verified.has(n))
         )
           throw new Error("Unsupported answer");
-        answer = grounded.answer;
+        answer =
+          (repositoryOverview
+            ? "Overview based on selected excerpts; it may not cover every section of the manuals.\n\n"
+            : "") + grounded.answer;
       } catch {
-        answer = noEvidence;
+        let insufficient = false;
+        try {
+          insufficient =
+            JSON.parse(
+              answer.trim().replace(/^```(?:json)?\s*([\s\S]*?)\s*```$/i, "$1"),
+            ).answerable === false;
+        } catch {
+          /* Report invalid output distinctly from absent evidence. */
+        }
+        answer = insufficient
+          ? noEvidence
+          : "I found passages in the selected knowledge base, but the model did not return an answer with verifiable evidence. Please try a more specific question. An administrator may need to check model compatibility.";
         sources = [];
       }
       reasoning = "";
