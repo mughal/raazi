@@ -33,6 +33,8 @@ export function Admin({
     [busy, setBusy] = useState(false),
     [embeddingTest, setEmbeddingTest] = useState(""),
     [modelTest, setModelTest] = useState(""),
+    [manualFiles, setManualFiles] = useState<File[]>([]),
+    [uploadResults, setUploadResults] = useState<string[]>([]),
     [error, setError] = useState(""),
     [editUser, setEditUser] = useState<User | null>(null);
   async function load() {
@@ -462,17 +464,71 @@ export function Admin({
               </button>
             </form>
             <form
-              className="card"
+              className="card upload-dropzone"
+              onDragOver={(e) => {
+                if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!busy) setManualFiles(Array.from(e.dataTransfer.files));
+              }}
               onSubmit={(e) => {
                 const f = form(e),
                   target = e.currentTarget;
+                if (!manualFiles.length) {
+                  setError("Choose or drop documents first.");
+                  return;
+                }
+                setUploadResults([]);
                 void submit(async () => {
-                  await api("/api/admin/documents/upload", "POST", f);
-                  target.reset();
-                }, "Document uploaded; check its indexing status below");
+                  const results: string[] = [];
+                  const failedFiles: File[] = [];
+                  for (const file of manualFiles) {
+                    const upload = new FormData();
+                    upload.append("file", file);
+                    upload.append("repository_id", value(f, "repository_id"));
+                    upload.append(
+                      "title",
+                      manualFiles.length === 1 ? value(f, "title") : file.name,
+                    );
+                    try {
+                      const result = await api<{ status: string }>(
+                        "/api/admin/documents/upload",
+                        "POST",
+                        upload,
+                      );
+                      results.push(
+                        `${file.name}: ${result.status === "ready" ? "Ready" : "Stored; indexing failed — see Documents below"}`,
+                      );
+                    } catch (e) {
+                      failedFiles.push(file);
+                      results.push(`${file.name}: ${(e as Error).message}`);
+                    }
+                    setUploadResults([...results]);
+                  }
+                  setManualFiles(failedFiles);
+                  if (!failedFiles.length) target.reset();
+                }, "Upload batch finished; check individual results below");
               }}
             >
-              <h3>Upload a document</h3>
+              <h3>Upload documents</h3>
+              <p className="help">
+                Drop documents here or select multiple files. Each file is
+                uploaded and indexed separately.
+              </p>
+              {manualFiles.length > 0 && (
+                <p>
+                  {manualFiles.length} file(s) selected:{" "}
+                  {manualFiles.map((f) => f.name).join(", ")}
+                </p>
+              )}
+              {uploadResults.length > 0 && (
+                <ul>
+                  {uploadResults.map((result, n) => (
+                    <li key={n}>{result}</li>
+                  ))}
+                </ul>
+              )}
               {busy && (
                 <p className="help">
                   Processing request… New documents will show indexing progress
@@ -500,7 +556,11 @@ export function Admin({
                 <input
                   name="file"
                   type="file"
-                  required
+                  multiple
+                  disabled={busy}
+                  onChange={(e) =>
+                    setManualFiles(Array.from(e.target.files ?? []))
+                  }
                   accept=".pdf,.docx,.txt,.md"
                 />
               </Field>

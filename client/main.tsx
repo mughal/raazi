@@ -601,7 +601,23 @@ function App() {
                   answers.
                 </p>
               )}
-              <form className="composer" onSubmit={send}>
+              <form
+                className="composer"
+                onSubmit={send}
+                onDragOver={(e) => {
+                  if (e.dataTransfer.types.includes("Files"))
+                    e.preventDefault();
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  if (workspace.uploads_enabled)
+                    void uploadFiles(e.dataTransfer.files);
+                  else
+                    setError(
+                      "Uploads are off. Ask an admin to configure storage.",
+                    );
+                }}
+              >
                 <AttachmentChips
                   files={files}
                   busy={busy}
@@ -748,7 +764,7 @@ function App() {
                 )}
                 <p id="upload-help" className="upload-help">
                   {workspace.uploads_enabled
-                    ? "Files stay private. PDF, DOCX, TXT, Markdown: 20 MB." +
+                    ? "Drop files here or use + to select several. Files stay private. PDF, DOCX, TXT, Markdown: 20 MB." +
                       (workspace.supports_images
                         ? " PNG, JPEG, WebP: 10 MB."
                         : " Image input is off.")

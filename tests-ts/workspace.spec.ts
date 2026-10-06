@@ -1000,3 +1000,60 @@ test("selected empty knowledge base gives an apology instead of a general answer
     "Sorry, I couldn't find relevant information in Empty Manuals.",
   );
 });
+
+test("knowledge multiselect and composer file drops accept several documents", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Knowledge", exact: true }).click();
+  await page
+    .getByLabel("Upload repository")
+    .selectOption({ label: "Policies" });
+  await page.getByLabel("Document file").setInputFiles([
+    {
+      name: "manual-one.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Annual leave allowance is 25 days."),
+    },
+    {
+      name: "manual-two.txt",
+      mimeType: "text/plain",
+      buffer: Buffer.from("Travel requires manager approval."),
+    },
+  ]);
+  await page
+    .getByRole("button", { name: "Upload and index", exact: true })
+    .click();
+  await expect(
+    page.getByText("manual-one.txt: Ready", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByText("manual-two.txt: Ready", { exact: true }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  const transfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(
+      new File(["Leave is 25 days."], "drop-one.txt", { type: "text/plain" }),
+    );
+    dt.items.add(
+      new File(["Manager approves travel."], "drop-two.txt", {
+        type: "text/plain",
+      }),
+    );
+    return dt;
+  });
+  await page
+    .locator(".composer")
+    .dispatchEvent("drop", { dataTransfer: transfer });
+  await expect(page.locator(".composer .attachment-ready")).toHaveCount(2);
+  await expect(page.locator(".composer")).toContainText("drop-one.txt");
+  await expect(page.locator(".composer")).toContainText("drop-two.txt");
+});

@@ -159,7 +159,7 @@ export async function extractDocument(filename: string, raw: Buffer) {
     if (error instanceof Failure) throw error;
     throw new Failure(
       400,
-      "Could not read this document. Upload an unencrypted, valid file.",
+      "Could not extract text from this document. Check that it is valid and does not require a password to open.",
     );
   }
   if (!units.length)
@@ -227,7 +227,11 @@ export const requestJSON: RequestJSON = async (url, body, key) => {
     redirect: "error",
     signal: AbortSignal.timeout(120000),
   });
-  if (!response.ok) throw new Error("Upstream request failed");
+  if (!response.ok)
+    throw new Failure(
+      502,
+      `Inference endpoint returned HTTP ${response.status}.`,
+    );
   return response.json();
 };
 export async function embeddings(
@@ -269,10 +273,11 @@ export async function embeddings(
       onProgress?.(vectors.length, texts.length);
     }
     return vectors;
-  } catch {
+  } catch (error) {
     throw new Failure(
       502,
-      "Embedding request failed. Check endpoint, model, credentials, and vector dimensions.",
+      "Embedding request failed. Check endpoint, model, credentials, and vector dimensions." +
+        (error instanceof Failure ? " " + error.message : ""),
     );
   }
 }
