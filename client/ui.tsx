@@ -2,6 +2,7 @@ import { useEffect, useRef, ReactNode } from "react";
 export function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     copy: "M8 8h12v12H8ZM4 16H3V3h13v1",
+    thinking: "M9 18h6M9 21h6M8 14a7 7 0 1 1 8 0l-1 4H9Z",
     refresh: "M20 7a8 8 0 1 0 1 9M20 3v5h-5",
     arrow: "M12 19V5m-6 6 6-6 6 6",
     home: "m3 10 9-7 9 7M5 9v11h5v-6h4v6h5V9",

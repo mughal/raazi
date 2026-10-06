@@ -22,6 +22,7 @@ import { Secrets, LocalDB } from "../server/db";
 import { RequestJSON } from "../server/knowledge";
 import { memoryStorage, storageInput } from "./storage-fixture";
 import { policyPDF, policyDOCX, mockRequest } from "./fixtures";
+import { splitThinking } from "../shared/thinking";
 let handler: RequestJSON = mockRequest;
 let root: string,
   service: Awaited<ReturnType<typeof createApp>>,
@@ -75,6 +76,162 @@ async function configure() {
     ).status,
   ).toBe(200);
 }
+it("separates saved thinking, sends the switch to vLLM, and excludes thoughts from subsequent context", async () => {
+  await configure();
+  await mutate("put", "/api/admin/settings", {
+    base_url: "http://model.test/v1",
+    model: "local",
+    display_name: "Raazi Assistant",
+    thinking_control: "enable_thinking",
+    system_prompt: "Be helpful.",
+    api_key: "",
+  });
+  expect((await admin.get("/api/workspace")).body.models[0]).toMatchObject({
+    label: "Raazi Assistant",
+    supports_thinking: true,
+  });
+  await configure(); // An older settings client must preserve the new metadata.
+  expect((await admin.get("/api/workspace")).body.models[0]).toMatchObject({
+    label: "Raazi Assistant",
+    supports_thinking: true,
+  });
+  const calls: any[] = [];
+  handler = async (_url, body) => {
+    calls.push(body);
+    return {
+      choices: [
+        {
+          message:
+            calls.length === 1
+              ? { content: "<think>Private model steps.</think>Final answer." }
+              : {
+                  content: "Next answer.",
+                  reasoning_content: "Separate model steps.",
+                },
+        },
+      ],
+    };
+  };
+  const first = await mutate("post", "/api/chat", {
+    message: "First",
+    thinking: true,
+  });
+  expect(first.status).toBe(200);
+  expect(first.body).toMatchObject({
+    content: "Final answer.",
+    reasoning: "Private model steps.",
+  });
+  expect(calls[0].chat_template_kwargs).toEqual({ enable_thinking: true });
+  const stored = (
+    await admin.get("/api/conversations/" + first.body.conversation_id)
+  ).body;
+  expect(stored[1]).toMatchObject({
+    content: "Final answer.",
+    reasoning: "Private model steps.",
+  });
+  const second = await mutate("post", "/api/chat", {
+    message: "Next",
+    conversation_id: first.body.conversation_id,
+    thinking: false,
+  });
+  expect(second.body).toMatchObject({
+    content: "Next answer.",
+    reasoning: "Separate model steps.",
+  });
+  expect(calls[1].chat_template_kwargs).toEqual({ enable_thinking: false });
+  expect(JSON.stringify(calls[1].messages)).not.toContain(
+    "Private model steps",
+  );
+  // Older saved marked content is separated on read without modifying the stored original.
+  service.db.run(
+    "UPDATE messages SET content=?,reasoning='' WHERE id=?",
+    "<think>Old steps.</think>Old answer.",
+    stored[1].id,
+  );
+  expect(
+    (await admin.get("/api/conversations/" + first.body.conversation_id))
+      .body[1],
+  ).toMatchObject({ content: "Old answer.", reasoning: "Old steps." });
+});
+
+it("keeps per-model aliases and thinking controls separate from inference IDs", async () => {
+  const provider = {
+    name: "Local engine",
+    kind: "openai-compatible",
+    base_url: "http://model.test/v1",
+    models: ["org/cryptic-model", "ordinary"],
+    model_options: {
+      "org/cryptic-model": {
+        display_name: "SNGPL Expert",
+        thinking_control: "thinking",
+      },
+    },
+  };
+  const created = await mutate("post", "/api/admin/providers", provider);
+  expect(created.status).toBe(200);
+  const info = (await admin.get("/api/admin/providers")).body;
+  const model = info.models.find((m: any) => m.label === "SNGPL Expert");
+  expect(model.supports_thinking).toBe(true);
+  let call: any;
+  handler = async (_url, body) => {
+    call = body;
+    return {
+      choices: [
+        { message: { content: "Answer", reasoning: "Engine reasoning" } },
+      ],
+    };
+  };
+  const result = await mutate("post", "/api/chat", {
+    message: "Hello",
+    model_key: model.key,
+    thinking: true,
+  });
+  expect(result.body.reasoning).toBe("Engine reasoning");
+  expect(call.model).toBe("org/cryptic-model");
+  expect(call.chat_template_kwargs).toEqual({ thinking: true });
+  const { model_options, ...oldClient } = provider;
+  expect(
+    (await mutate("put", "/api/admin/providers/" + created.body.id, oldClient))
+      .status,
+  ).toBe(200);
+  expect((await admin.get("/api/admin/providers")).body.models).toContainEqual(
+    model,
+  );
+  const ordinary = info.models.find((m: any) =>
+    m.label.endsWith(" / ordinary"),
+  );
+  await mutate("post", "/api/chat", {
+    message: "Hello",
+    model_key: ordinary.key,
+    thinking: true,
+  });
+  expect(call).not.toHaveProperty("chat_template_kwargs");
+  expect(
+    (
+      await mutate("put", "/api/admin/providers/" + created.body.id, {
+        ...provider,
+        model_options: { unknown: { display_name: "Wrong" } },
+      })
+    ).status,
+  ).toBe(400);
+});
+
+it("preserves prose and code mentioning thinking tags and rejects reasoning-only completions without saving", async () => {
+  expect(splitThinking("Use `<think>` tags in code.")).toEqual({
+    content: "Use `<think>` tags in code.",
+    reasoning: "",
+  });
+  expect(splitThinking("<think></think>\nAnswer").content).toBe("Answer");
+  expect(splitThinking("<THINK>Steps</THINK>Answer").reasoning).toBe("Steps");
+  await configure();
+  handler = async () => ({
+    choices: [{ message: { content: "<think>Unfinished reasoning" } }],
+  });
+  expect((await mutate("post", "/api/chat", { message: "Hello" })).status).toBe(
+    502,
+  );
+  expect(service.db.all("SELECT * FROM conversations")).toHaveLength(0);
+});
 async function repo(groups: string[] = []) {
   return (
     await mutate("post", "/api/admin/repositories", { name: "HR", groups })
@@ -591,6 +748,10 @@ describe("legacy workspace migration", () => {
     const db = new LocalDB(path);
     try {
       expect(db.get("SELECT content FROM messages")!.content).toBe("Hello");
+      expect(db.get("SELECT reasoning FROM messages")!.reasoning).toBe("");
+      expect(
+        db.get("SELECT display_name,thinking_control FROM settings"),
+      ).toMatchObject({ display_name: "", thinking_control: "none" });
       expect(db.get("SELECT content FROM passages")!.content).toBe(
         "Legacy text",
       );

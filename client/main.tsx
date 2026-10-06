@@ -82,6 +82,7 @@ function App() {
     [repository, setRepository] = useState(""),
     [modelKey, setModelKey] = useState(""),
     [useDecision, setUseDecision] = useState(false),
+    [thinking, setThinking] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [toast, setToast] = useState(""),
@@ -241,6 +242,7 @@ function App() {
         attachment_ids: submittedFiles.map((f) => f.id),
         model_key: modelKey || undefined,
         use_decision: useDecision && !!workspace?.routing_enabled,
+        thinking,
       });
       setMessages(
         await api<Message[]>("/api/conversations/" + result.conversation_id),
@@ -278,6 +280,7 @@ function App() {
         attachment_ids: attached.map((f: Attachment) => f.id),
         model_key: modelKey || undefined,
         use_decision: useDecision && !!workspace?.routing_enabled,
+        thinking,
       });
       setMessages(await api<Message[]>("/api/conversations/" + cid));
       await refresh();
@@ -346,6 +349,10 @@ function App() {
     workspace.models.find(
       (m) => m.key === (modelKey || workspace.default_model),
     ) ?? workspace.models[0];
+  const canThink =
+    useDecision && workspace.routing_enabled
+      ? workspace.models.some((m) => m.supports_thinking)
+      : !!chosenModel?.supports_thinking;
   const current = workspace.conversations.find((c) => c.id === cid),
     currentFolder = workspace.groups.find((g) => g.id === folder);
   const editChat = (chat: Chat) => {
@@ -698,19 +705,34 @@ function App() {
                     : "Uploads are off. Ask an admin to configure S3 storage."}
                 </p>
               </form>
-              <label className="decision-toggle">
-                <input
-                  type="checkbox"
-                  role="switch"
-                  checked={useDecision && workspace.routing_enabled}
-                  disabled={busy || !workspace.routing_enabled}
-                  onChange={(e) => setUseDecision(e.target.checked)}
-                />
-                Use decision model
-                {!workspace.routing_enabled && (
-                  <span>Admin setup required</span>
-                )}
-              </label>
+              <div className="chat-switches">
+                <label
+                  className="decision-toggle"
+                  title="Controls thinking generation for models with a configured thinking control."
+                >
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={thinking && canThink}
+                    disabled={busy || !canThink}
+                    onChange={(e) => setThinking(e.target.checked)}
+                  />
+                  <Icon name="thinking" /> Thinking
+                </label>
+                <label className="decision-toggle">
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={useDecision && workspace.routing_enabled}
+                    disabled={busy || !workspace.routing_enabled}
+                    onChange={(e) => setUseDecision(e.target.checked)}
+                  />
+                  Use decision model
+                  {!workspace.routing_enabled && (
+                    <span>Admin setup required</span>
+                  )}
+                </label>
+              </div>
               <p className="footnote">
                 AI can provide incorrect information. Check important answers
                 and their sources.

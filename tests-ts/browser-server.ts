@@ -17,6 +17,23 @@ const service = await createApp({
       ? { models: [{ name: "jev-latest" }] }
       : { data: [{ id: "small" }, { id: "expert" }] },
   request: async (url, body) => {
+    if (
+      !url.endsWith("/embeddings") &&
+      (body as any).messages?.at(-1)?.content === "Thinking fixture"
+    ) {
+      const on = (body as any).chat_template_kwargs?.enable_thinking === true;
+      return {
+        choices: [
+          {
+            message: {
+              content: on
+                ? "<think>Fixture model reasoning.</think>Visible final answer."
+                : "Thinking disabled answer.",
+            },
+          },
+        ],
+      };
+    }
     if (url.endsWith("/systemone")) {
       const keys = Object.keys((body as any).questions.target.criteria),
         selected = keys.at(-1)!;

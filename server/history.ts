@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { Failure, LocalDB, Row } from "./db.js";
 import { Mutex } from "./mutex.js";
 import type { Chat, Group } from "../shared/types.js";
+import { splitThinking } from "../shared/thinking.js";
 export class History {
   pool: Pool | null;
   namespace: string;
@@ -87,6 +88,9 @@ export class History {
       await client!.query(
         "ALTER TABLE raazi_chat_messages ADD COLUMN IF NOT EXISTS attachments TEXT NOT NULL DEFAULT '[]'",
       );
+      await client!.query(
+        "ALTER TABLE raazi_chat_messages ADD COLUMN IF NOT EXISTS reasoning TEXT NOT NULL DEFAULT ''",
+      );
       if (
         (
           await this.query(
@@ -121,7 +125,7 @@ export class History {
       }
       for (const row of this.db.all("SELECT * FROM messages ORDER BY id"))
         await this.query(
-          "INSERT INTO raazi_chat_messages(namespace,conversation_id,role,content,sources,attachments) VALUES(?,?,?,?,?,?)",
+          "INSERT INTO raazi_chat_messages(namespace,conversation_id,role,content,sources,attachments,reasoning) VALUES(?,?,?,?,?,?,?)",
           [
             this.namespace,
             row.conversation_id,
@@ -129,6 +133,7 @@ export class History {
             row.content,
             row.sources,
             row.attachments ?? "[]",
+            row.reasoning ?? "",
           ],
           client,
         );
@@ -182,7 +187,12 @@ export class History {
       `SELECT * FROM ${this.table("messages")} WHERE ${this.pool ? "namespace=? AND " : ""}conversation_id=? ORDER BY id ${limit ? "DESC LIMIT ?" : ""}`,
       [...args, ...(limit ? [limit] : [])],
     );
-    return limit ? rows.reverse() : rows;
+    const messages = rows.map((r) =>
+      r.role === "assistant"
+        ? { ...r, ...splitThinking(r.content, r.reasoning) }
+        : r,
+    );
+    return limit ? messages.reverse() : messages;
   }
   async createGroup(uid: string, name: string) {
     const id = randomBytes(18).toString("base64url");
@@ -241,6 +251,7 @@ export class History {
     group: string | null,
     attachments: unknown[] = [],
     revision?: { messageId: string; tailId: string; version: number },
+    reasoning = "",
   ) {
     return this.tx(async (c) => {
       const now = new Date().toISOString();
@@ -327,6 +338,7 @@ export class History {
             "content",
             "sources",
             "attachments",
+            "reasoning",
           ],
           values: any[] = [
             id,
@@ -334,6 +346,7 @@ export class History {
             content,
             refs,
             role === "user" ? JSON.stringify(attachments) : "[]",
+            role === "assistant" ? reasoning : "",
           ];
         if (this.pool) {
           keys.unshift("namespace");

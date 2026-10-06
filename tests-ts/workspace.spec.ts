@@ -669,3 +669,108 @@ test("admins discover providers and users select models or enable Jev routing", 
     "Decision route: knowledge",
   );
 });
+
+test("model display names and thinking switch keep reasoning separate across reload and copy", async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByLabel("Model base URL").fill("http://fixture.test/v1");
+  await page
+    .getByLabel("Model name", { exact: true })
+    .fill("cryptic-model-123");
+  await page.getByLabel("Model display name").fill("Raazi Assistant");
+  await page
+    .getByLabel("Thinking control", { exact: true })
+    .selectOption("enable_thinking");
+  await page.getByRole("button", { name: "Save model settings" }).click();
+  await expect(page.getByRole("status")).toContainText("Model settings saved");
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByLabel("Selected model").click();
+  await page
+    .locator(".model-menu")
+    .getByRole("button", { name: "Raazi Assistant", exact: true })
+    .click();
+  await expect(page.getByLabel("Selected model")).toContainText(
+    "Raazi Assistant",
+  );
+  await expect(
+    page.getByRole("switch", { name: "Thinking", exact: true }),
+  ).not.toBeChecked();
+  await page.getByRole("switch", { name: "Thinking", exact: true }).check();
+  await page.getByLabel("Message Raazi").fill("Thinking fixture");
+  await page.getByRole("button", { name: "Send message" }).click();
+  const reply = page.locator(".message.assistant").last();
+  await expect(reply.locator(".markdown")).toHaveText("Visible final answer.");
+  await expect(reply.locator(".thinking-text")).toBeHidden();
+  await reply.locator(".message-thinking summary").click();
+  await expect(reply.locator(".thinking-text")).toHaveText(
+    "Fixture model reasoning.",
+  );
+  await reply.getByRole("button", { name: "Copy response" }).click();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+    "Visible final answer.",
+  );
+  await page.screenshot({ path: "data/react-thinking.png", fullPage: true });
+  await page.reload();
+  await expect(
+    page.getByRole("switch", { name: "Thinking", exact: true }),
+  ).not.toBeChecked();
+  await expect(page.locator(".message.assistant .thinking-text")).toBeHidden();
+  // Reopen saved history explicitly; selected conversation is not stored across reload.
+  await page
+    .getByRole("button", { name: "Thinking fixture", exact: true })
+    .click();
+  await expect(page.locator(".message.assistant .markdown")).toHaveText(
+    "Visible final answer.",
+  );
+  await page.locator(".message-thinking summary").click();
+  await expect(page.locator(".thinking-text")).toHaveText(
+    "Fixture model reasoning.",
+  );
+  await page.getByLabel("Message Raazi").fill("Thinking fixture");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    page.locator(".message.assistant").last().locator(".markdown"),
+  ).toHaveText("Thinking disabled answer.");
+  await expect(
+    page.locator(".message.assistant").last().locator(".message-thinking"),
+  ).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Providers", exact: true }).click();
+  await page.getByLabel("Provider name", { exact: true }).fill("Named engine");
+  await page.getByLabel("Provider base URL").fill("http://fixture.test/v1");
+  await page.getByLabel("Approved model names").fill("cryptic-provider-id");
+  await page
+    .getByLabel("Display name for cryptic-provider-id")
+    .fill("SNGPL Expert");
+  await page.getByRole("button", { name: "Add provider", exact: true }).click();
+  await expect(page.getByRole("status")).toContainText("Provider saved");
+  await page
+    .getByRole("button", { name: "Edit Named engine", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Display name for cryptic-provider-id"),
+  ).toHaveValue("SNGPL Expert");
+  await page.getByRole("button", { name: "Chat", exact: true }).click();
+  await page.getByLabel("Selected model").click();
+  await page
+    .locator(".model-menu")
+    .getByRole("button", { name: "SNGPL Expert", exact: true })
+    .click();
+  await expect(page.getByLabel("Selected model")).toContainText("SNGPL Expert");
+  await expect(
+    page.getByRole("switch", { name: "Thinking", exact: true }),
+  ).toBeDisabled();
+});

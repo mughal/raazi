@@ -1954,6 +1954,39 @@ label > select {
   color: #66756e;
   margin-top: 8px;
 }
+.chat-switches {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 16px;
+}
+.message-thinking {
+  margin: 8px 0 12px;
+  color: var(--muted);
+}
+.message-thinking summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  width: fit-content;
+  font-size: 13px;
+}
+.message-thinking[open] summary .ui-icon:last-child {
+  transform: rotate(90deg);
+}
+.thinking-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding: 12px;
+  border-left: 2px solid currentColor;
+  font-size: 13px;
+  line-height: 1.6;
+}
 .decision-toggle input {
   accent-color: var(--green);
   width: 28px;

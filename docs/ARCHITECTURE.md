@@ -1,6 +1,6 @@
 # Raazi architecture
 
-Updated: 5 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before continuing development.
+Updated: 6 October 2026. Read this file with [HANDOFF.md](HANDOFF.md) before continuing development.
 
 ## Product and scope
 
@@ -87,6 +87,12 @@ New uploaded originals use S3. Legacy or programmatically added repository docum
 10. Display formatted Markdown, source links, and response tools.
 
 Requests use non-streaming responses. Chat requests time out after 120 seconds. Model discovery uses authenticated `GET /models` and a 15-second timeout. No provider calls are needed to start the UI.
+
+Model display names are optional labels. The default connection stores `display_name` and `thinking_control` in SQLite settings. Providers store these values per approved model in `model_options`. Model keys and actual inference IDs remain unchanged. Blank display names retain the original labels.
+
+The composer Thinking switch starts off after reload. Configured models send `chat_template_kwargs.enable_thinking` or `chat_template_kwargs.thinking` as a boolean. Models with no configured control use the engine default and send no extra parameter. Decision routing applies the preference to the final selected chat model, when supported. It does not control the decision model.
+
+`shared/thinking.ts` separates `reasoning_content`, `reasoning`, and leading `<think>...</think>` blocks from answer text. Ordinary prose and code remain intact. Reasoning-only responses fail without saving an exchange. SQLite and PostgreSQL history add a `reasoning` text column without replacing existing data. Saved legacy tagged replies are separated on read. Prior context and decision requests include only answer text. Replies show reasoning as escaped text under a collapsed Thinking icon; answer copy excludes it. Reasoning is stored with the private chat and has the same access checks. Raazi displays only reasoning supplied by the external model.
 
 Question edit/resend saves only after successful inference. A revision checks the saved version and tail message. It replaces the edited question and later replies atomically. Concurrent changes return a conflict rather than overwrite another request.
 

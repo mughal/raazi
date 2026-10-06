@@ -1,4 +1,5 @@
 import type { ComposerShadeId, ComposerSizeId, PaletteId } from "./palettes.js";
+import type { ThinkingControl } from "./thinking.js";
 export interface User {
   palette: PaletteId;
   composer_shade: ComposerShadeId;
@@ -38,6 +39,7 @@ export interface Source {
   url: string;
 }
 export interface Message {
+  reasoning?: string;
   id?: number | string;
   role: "user" | "assistant";
   content: string;
@@ -51,11 +53,16 @@ export interface Repository {
   groups_json: string;
 }
 export interface ModelOption {
+  supports_thinking?: boolean;
   key: string;
   label: string;
   supports_images: boolean;
 }
 export interface Provider {
+  model_options?: Record<
+    string,
+    { display_name: string; thinking_control: ThinkingControl }
+  >;
   purpose: "chat" | "decision" | "both";
   id: string;
   name: string;
@@ -98,6 +105,8 @@ export interface Session {
   development: boolean;
 }
 export interface Settings {
+  display_name?: string;
+  thinking_control?: ThinkingControl;
   supports_images: boolean;
   base_url: string;
   model: string;

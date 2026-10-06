@@ -6,6 +6,7 @@ import type {
   StorageSettings,
 } from "../shared/types";
 import { ModelProviders } from "./ModelProviders";
+import { ThinkingSetting } from "./ThinkingSetting";
 import { StorageForm } from "./StorageForm";
 import { api } from "./api";
 import { Field, Modal } from "./ui";
@@ -125,6 +126,8 @@ export function Admin({ notify, refresh }: Props) {
                 api("/api/admin/settings", "PUT", {
                   base_url: value(f, "base_url"),
                   model: value(f, "model"),
+                  display_name: value(f, "display_name"),
+                  thinking_control: value(f, "thinking_control"),
                   system_prompt: value(f, "system_prompt"),
                   api_key: value(f, "api_key"),
                   clear_api_key: f.has("clear_api_key"),
@@ -148,6 +151,18 @@ export function Admin({ notify, refresh }: Props) {
           <Field label="Model name">
             <input name="model" required defaultValue={data.settings.model} />
           </Field>
+          <Field label="Model display name">
+            <input
+              name="display_name"
+              maxLength={100}
+              defaultValue={data.settings.display_name ?? ""}
+              placeholder="For example: Raazi Assistant"
+            />
+            <small>
+              Shown in the composer. Leave blank to use the model ID above.
+            </small>
+          </Field>
+          <ThinkingSetting value={data.settings.thinking_control} />
           <Field label="Model API key">
             <input
               name="api_key"

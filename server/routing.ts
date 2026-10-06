@@ -2,6 +2,13 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { Failure, LocalDB, Secrets, type Row } from "./db.js";
 import { requestJSON, type RequestJSON } from "./knowledge.js";
+import type { ThinkingControl } from "../shared/thinking.js";
+
+export const thinkingControlSchema = z.enum([
+  "none",
+  "enable_thinking",
+  "thinking",
+]);
 
 export const providerSchema = z
   .object({
@@ -34,6 +41,18 @@ export const providerSchema = z
         (a) => new Set(a).size === a.length,
         "Model names must be unique.",
       ),
+    model_options: z
+      .record(
+        z.string().min(1).max(200),
+        z
+          .object({
+            display_name: z.string().trim().max(100).default(""),
+            thinking_control: thinkingControlSchema.default("none"),
+          })
+          .strict(),
+      )
+      .refine((options) => Object.keys(options).length <= 32)
+      .optional(),
     enabled: z.boolean().default(true),
     supports_images: z.boolean().default(false),
     purpose: z.enum(["chat", "decision", "both"]).default("chat"),
@@ -57,6 +76,7 @@ export type ModelTarget = {
   base_url: string;
   api_key: string;
   supports_images: boolean;
+  thinking_control: ThinkingControl;
 };
 export type GetJSON = (url: string, key: string) => Promise<unknown>;
 const getJSON: GetJSON = async (url, key) => {
@@ -87,6 +107,14 @@ export class Routing {
       CREATE TABLE IF NOT EXISTS routing_settings(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,provider_id TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',threshold REAL NOT NULL DEFAULT 0.8,default_model TEXT NOT NULL DEFAULT '');
       INSERT OR IGNORE INTO routing_settings(id) VALUES(1);
     `);
+    if (
+      !db
+        .all("PRAGMA table_info(model_providers)")
+        .some((c) => c.name === "model_options")
+    )
+      db.raw.exec(
+        "ALTER TABLE model_providers ADD COLUMN model_options TEXT NOT NULL DEFAULT '{}'",
+      );
   }
   providers() {
     return this.db
@@ -97,6 +125,7 @@ export class Routing {
         kind: p.kind,
         base_url: p.base_url,
         models: JSON.parse(p.models) as string[],
+        model_options: JSON.parse(p.model_options),
         enabled: !!p.enabled,
         supports_images: !!p.supports_images,
         purpose: p.purpose,
@@ -138,8 +167,21 @@ export class Routing {
         ? ""
         : (prior?.api_key ?? "");
     id ??= randomBytes(12).toString("hex");
+    const options =
+      input.model_options ?? JSON.parse(prior?.model_options ?? "{}");
+    if (
+      input.model_options &&
+      Object.keys(options).some((model) => !input.models.includes(model))
+    )
+      throw new Failure(
+        400,
+        "Model display settings must use approved model IDs.",
+      );
+    const approvedOptions = Object.fromEntries(
+      input.models.filter((m) => options[m]).map((m) => [m, options[m]]),
+    );
     this.db.run(
-      "INSERT INTO model_providers(id,name,kind,base_url,models,enabled,supports_images,api_key,purpose) VALUES(?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,base_url=excluded.base_url,models=excluded.models,enabled=excluded.enabled,supports_images=excluded.supports_images,api_key=excluded.api_key,purpose=excluded.purpose",
+      "INSERT INTO model_providers(id,name,kind,base_url,models,enabled,supports_images,api_key,purpose,model_options) VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,kind=excluded.kind,base_url=excluded.base_url,models=excluded.models,enabled=excluded.enabled,supports_images=excluded.supports_images,api_key=excluded.api_key,purpose=excluded.purpose,model_options=excluded.model_options",
       id,
       input.name,
       input.kind,
@@ -149,6 +191,7 @@ export class Routing {
       Number(input.supports_images),
       key,
       input.kind === "typesafe" ? "decision" : input.purpose,
+      JSON.stringify(approvedOptions),
     );
     return id;
   }
@@ -168,35 +211,41 @@ export class Routing {
         ? [
             {
               key: "default",
-              label: "Default / " + legacy.model,
+              label: legacy.display_name || "Default / " + legacy.model,
               model: legacy.model,
               base_url: legacy.base_url,
               api_key: legacy.api_key,
               supports_images: !!legacy.supports_images,
+              thinking_control: legacy.thinking_control,
             },
           ]
         : [];
     for (const p of this.db.all(
       "SELECT * FROM model_providers WHERE enabled=1 AND kind='openai-compatible' AND purpose IN ('chat','both') ORDER BY name,id",
     )) {
+      const options = JSON.parse(p.model_options);
       for (const model of JSON.parse(p.models) as string[])
         models.push({
           key: p.id + "/" + encodeURIComponent(model),
-          label: p.name + " / " + model,
+          label: options[model]?.display_name || p.name + " / " + model,
           model,
           base_url: p.base_url,
           api_key: p.api_key,
           supports_images: !!p.supports_images,
+          thinking_control: options[model]?.thinking_control ?? "none",
         });
     }
     return models;
   }
   publicModels() {
-    return this.models().map(({ key, label, supports_images }) => ({
-      key,
-      label,
-      supports_images,
-    }));
+    return this.models().map(
+      ({ key, label, supports_images, thinking_control }) => ({
+        key,
+        label,
+        supports_images,
+        supports_thinking: thinking_control !== "none",
+      }),
+    );
   }
   select(key = "") {
     const models = this.models();

@@ -95,6 +95,8 @@ export class LocalDB {
         composer_size: "TEXT NOT NULL DEFAULT 'compact'",
       },
       settings: {
+        display_name: "TEXT NOT NULL DEFAULT ''",
+        thinking_control: "TEXT NOT NULL DEFAULT 'none'",
         supports_images: "INTEGER NOT NULL DEFAULT 0",
         storage_enabled: "INTEGER NOT NULL DEFAULT 0",
         storage_store_id: "TEXT",
@@ -116,7 +118,10 @@ export class LocalDB {
         indexed_signature: "TEXT NOT NULL DEFAULT 'keyword'",
         index_backend: "TEXT NOT NULL DEFAULT 'local'",
       },
-      messages: { attachments: "TEXT NOT NULL DEFAULT '[]'" },
+      messages: {
+        attachments: "TEXT NOT NULL DEFAULT '[]'",
+        reasoning: "TEXT NOT NULL DEFAULT ''",
+      },
       conversations: {
         version: "INTEGER NOT NULL DEFAULT 0",
         group_id: "TEXT REFERENCES chat_groups(id) ON DELETE SET NULL",

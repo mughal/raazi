@@ -11,6 +11,18 @@
 
 Raazi calls `/chat/completions` with `stream: false`.
 
+Set **Model display name** to your organization's preferred name, such as `Raazi Assistant`. Users see it in the composer. Keep **Model name** as the exact ID required by the inference service. For multiple approved models, open **Providers** and set a display name for each model. Blank display names keep the existing labels.
+
+## Configure thinking
+
+Select **Thinking control** for each chat model. For a switchable Qwen model on vLLM, select **Switchable (vLLM / Qwen: enable_thinking)**. Raazi sends `chat_template_kwargs: {enable_thinking: true|false}`. For a model whose template uses `thinking`, select that control instead. See the [vLLM reasoning documentation](https://docs.vllm.ai/en/stable/features/reasoning_outputs/).
+
+Keep **Unavailable / engine default** for services that do not support these controls. The composer switch is disabled for that model and Raazi sends no thinking parameter. Some models always reason or always answer directly. Test your exact model and server version; a display setting cannot make a fixed-mode model switchable.
+
+Users enable **Thinking** beneath the composer for their next requests. It starts off after reload. With decision routing, the preference applies to the chosen chat model if that model supports it. The decision model keeps its own behavior.
+
+Reasoning returned in `reasoning_content`, `reasoning`, or leading `<think>` blocks appears under a collapsed **Thinking** icon on the reply. Select it to view the returned text. The final answer and **Copy response** exclude reasoning. Reasoning remains in private saved history but is not sent as prior context. A reply containing only reasoning fails without saving. Engines that return unmarked reasoning as ordinary prose need a server-side reasoning parser to separate it reliably.
+
 Enable **This model accepts image input** only for a vision model. The service must accept OpenAI-compatible `image_url` message parts with base64 data URLs. Test a real image before rollout.
 
 ## Test with an OpenAI key

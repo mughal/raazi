@@ -4,8 +4,10 @@ import {
   Routing,
   providerSchema,
   routingSchema,
+  thinkingControlSchema,
   type GetJSON,
 } from "./routing.js";
+import { splitThinking, thinkingParameters } from "../shared/thinking.js";
 import express, { Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
 import multer from "multer";
@@ -592,6 +594,7 @@ export async function createApp(config: Config) {
           message: text(16000, true),
           model_key: z.string().max(1000).optional(),
           use_decision: z.boolean().default(false),
+          thinking: z.boolean().default(false),
           conversation_id: text(100),
           group_id: identifier.nullable().optional(),
           repository_id: z.number().int().positive().nullable().optional(),
@@ -794,6 +797,7 @@ export async function createApp(config: Config) {
       ? [{ type: "text", text: data.message }, ...parts]
       : data.message;
     let answer: string;
+    let reasoning = "";
     try {
       const response = await (config.request ?? requestJSON)(
         target!.base_url + "/chat/completions",
@@ -805,10 +809,23 @@ export async function createApp(config: Config) {
             { role: "user", content: currentContent },
           ],
           stream: false,
+          ...thinkingParameters(target!.thinking_control, data.thinking),
         },
         secrets.open(target!.api_key),
       );
-      answer = response.choices[0].message.content;
+      const message = response.choices[0].message;
+      if (message.content != null && typeof message.content !== "string")
+        throw new Error("Invalid response");
+      const separated = splitThinking(
+        message.content ?? "",
+        typeof message.reasoning_content === "string"
+          ? message.reasoning_content
+          : typeof message.reasoning === "string"
+            ? message.reasoning
+            : "",
+      );
+      answer = separated.content;
+      reasoning = separated.reasoning;
       if (typeof answer !== "string" || !answer.trim())
         throw new Error("Empty response");
     } catch {
@@ -831,8 +848,15 @@ export async function createApp(config: Config) {
       data.group_id ?? null,
       files,
       revision,
+      reasoning,
     );
-    res.json({ conversation_id, content: answer, sources, attachments: files });
+    res.json({
+      conversation_id,
+      content: answer,
+      reasoning,
+      sources,
+      attachments: files,
+    });
   });
   app.get("/api/admin", protect(true), (_req, res) => {
     const s = knowledge.settings();
@@ -843,6 +867,8 @@ export async function createApp(config: Config) {
         system_prompt: s.system_prompt,
         has_api_key: !!s.api_key,
         supports_images: !!s.supports_images,
+        display_name: s.display_name,
+        thinking_control: s.thinking_control,
       },
       users: db.all("SELECT * FROM users ORDER BY name").map(publicUser),
       repositories: allowed(res.locals.user),
@@ -861,12 +887,14 @@ export async function createApp(config: Config) {
         api_key: text(4000),
         clear_api_key: z.boolean().optional(),
         supports_images: z.boolean().optional(),
+        display_name: z.string().trim().max(100).optional(),
+        thinking_control: thinkingControlSchema.optional(),
       }),
       req,
     );
     const s = knowledge.settings();
     db.run(
-      "UPDATE settings SET base_url=?,model=?,system_prompt=?,api_key=?,supports_images=? WHERE id=1",
+      "UPDATE settings SET base_url=?,model=?,system_prompt=?,api_key=?,supports_images=?,display_name=?,thinking_control=? WHERE id=1",
       data.base_url,
       data.model,
       data.system_prompt,
@@ -876,6 +904,8 @@ export async function createApp(config: Config) {
           ? ""
           : s.api_key,
       Number(data.supports_images ?? !!s.supports_images),
+      data.display_name ?? s.display_name,
+      data.thinking_control ?? s.thinking_control,
     );
     audit(res, "Updated model settings");
     res.json({ ok: true });

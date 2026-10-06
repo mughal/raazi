@@ -1,6 +1,6 @@
 # Development handoff
 
-Updated: 5 October 2026. This file is the starting point for work on another PC.
+Updated: 6 October 2026. This file is the starting point for work on another PC.
 
 ## Current project
 
@@ -24,6 +24,12 @@ The Linux host successfully prepared the PostgreSQL/pgvector image and built `lo
 Controller contract checks passed with mocked Git and Podman on Windows Git Bash. They cover preflight failures before restart, no implicit build/pull, volume-preserving teardown, clean fast-forward updates, environment selection, and operational values read without shell execution. The symlink check skipped because Git Bash created a copy instead of a real link. Actual Podman provider behavior and the Linux symlink still need host verification.
 
 ## What has been built
+
+The 6 October change adds model display names, per-model thinking controls, a composer Thinking switch, and collapsed reasoning on replies. Read the thinking setup in [ADMIN_GUIDE.md](ADMIN_GUIDE.md). Existing model IDs, credentials, namespace, and history remain intact. History adds a separate reasoning column in both stores. Reasoning is excluded from answer copy and subsequent model context. Live inference and the PostgreSQL migration still require target-host checks.
+
+The Linux host now reports both Raazi and PostgreSQL healthy. The user also verified HTTPS `/api/session` through the `raaziqa.sngpl.com.pk` Nginx route with `curl --resolve`, before DNS registration. This confirms the route and TLS connection; it does not verify Portal sign-in, inference, or S3.
+
+Verification for the thinking and display-name change: TypeScript/Vite build passed; 53 application tests passed. Three live PostgreSQL checks skipped without a disposable URL. All nine existing Edge workflows passed. The new thinking/display-name workflow passed on its focused rerun after an accessible-label correction. It covers generation on/off, separate reasoning, answer copy, history reload, default-model naming, provider naming, and unsupported-model switch state. Changed files pass formatting and diff whitespace checks. No live inference or PostgreSQL migration was performed on this PC. After committing and pushing, the Linux update needs `bash raazictl update`, `bash raazictl prepare app`, and `bash raazictl restart`.
 
 | Area                   | Completed work                                                                                              |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------- |

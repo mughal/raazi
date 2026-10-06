@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import type { Message, Source, Attachment } from "../shared/types";
 import { AttachmentChips } from "./Uploads";
 import { Icon } from "./ui";
+import { splitThinking } from "../shared/thinking";
 function CopyButton({
   text,
   label = "Copy response",
@@ -108,12 +109,24 @@ export function MessageView({
     attached = list<Attachment>(message.attachments);
   const [editing, setEditing] = useState(false),
     [draft, setDraft] = useState(message.content);
+  const reply =
+    message.role === "assistant"
+      ? splitThinking(message.content, message.reasoning)
+      : { content: message.content, reasoning: "" };
   const safeURL = (source: Source) =>
     /^\/sources\/[a-f0-9]{32}$/.test(source.url) ? source.url : "#";
   return (
     <article className={"message " + message.role}>
       <div className="author">{message.role === "user" ? "You" : "Raazi"}</div>
       <AttachmentChips files={attached} />
+      {reply.reasoning && (
+        <details className="message-thinking">
+          <summary>
+            <Icon name="thinking" /> Thinking <Icon name="chevron" />
+          </summary>
+          <div className="thinking-text">{reply.reasoning}</div>
+        </details>
+      )}
       {editing ? (
         <form
           className="question-editor"
@@ -180,7 +193,7 @@ export function MessageView({
               ),
             }}
           >
-            {message.content}
+            {reply.content}
           </Markdown>
         </div>
       ) : (
@@ -209,7 +222,7 @@ export function MessageView({
       {!editing && (
         <div className="message-tools">
           <CopyButton
-            text={message.content}
+            text={reply.content}
             label={
               message.role === "assistant" ? "Copy response" : "Copy question"
             }

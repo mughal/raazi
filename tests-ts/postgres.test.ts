@@ -21,17 +21,44 @@ it.skipIf(!url)(
     const local = new History(db);
     await local.createGroup("u", "Local folder");
     const group = (await local.list("u")).groups[0].id,
-      id = await local.append("u", undefined, "Hello", "Hi", [], group),
+      id = await local.append(
+        "u",
+        undefined,
+        "Hello",
+        "Hi",
+        [],
+        group,
+        [],
+        undefined,
+        "Imported thoughts",
+      ),
       pg = new History(db, url);
     try {
       await pg.prepare();
       expect((await pg.list("u")).conversations).toHaveLength(1);
       expect(await pg.messages("u", id)).toHaveLength(2);
+      expect((await pg.messages("u", id))[1].reasoning).toBe(
+        "Imported thoughts",
+      );
       await expect(pg.messages("v", id)).rejects.toThrow();
       await pg.delete("u", group, true);
       expect((await pg.list("u")).conversations[0].group_id).toBeNull();
-      await pg.append("u", id, "Again", "Reply", [], null);
+      await pg.append(
+        "u",
+        id,
+        "Again",
+        "Reply",
+        [],
+        null,
+        [],
+        undefined,
+        "New thoughts",
+      );
       expect(await pg.messages("u", id)).toHaveLength(4);
+      expect((await pg.messages("u", id))[3]).toMatchObject({
+        content: "Reply",
+        reasoning: "New thoughts",
+      });
       await pg.delete("u", id);
       await pg.prepare();
       expect((await pg.list("u")).conversations).toHaveLength(0);

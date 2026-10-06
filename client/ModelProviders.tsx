@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { Field } from "./ui";
+import { ThinkingSetting } from "./ThinkingSetting";
 import type { Provider, ProvidersData } from "../shared/types";
 export function ModelProviders({
   notify,
@@ -72,6 +73,22 @@ export function ModelProviders({
             .split(/\n|,/)
             .map((s) => s.trim())
             .filter(Boolean),
+          model_options: Object.fromEntries(
+            [
+              ...new Set(
+                models
+                  .split(/\n|,/)
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              ),
+            ].map((model, i) => [
+              model,
+              {
+                display_name: v("display_name_" + i),
+                thinking_control: v("thinking_control_" + i),
+              },
+            ]),
+          ),
           api_key: v("api_key"),
           clear_api_key: f.has("clear_api_key"),
           enabled: f.has("enabled"),
@@ -193,6 +210,32 @@ export function ModelProviders({
             placeholder="One model name per line"
           />
         </Field>
+        {[
+          ...new Set(
+            models
+              .split(/\n|,/)
+              .map((s) => s.trim())
+              .filter(Boolean),
+          ),
+        ].map((model, i) => (
+          <fieldset key={model}>
+            <legend>{model}</legend>
+            <Field label={"Display name for " + model}>
+              <input
+                name={"display_name_" + i}
+                maxLength={100}
+                defaultValue={
+                  editing?.model_options?.[model]?.display_name ?? ""
+                }
+                placeholder="Organization name shown in the composer"
+              />
+            </Field>
+            <ThinkingSetting
+              name={"thinking_control_" + i}
+              value={editing?.model_options?.[model]?.thinking_control}
+            />
+          </fieldset>
+        ))}
         {!!found.length && (
           <fieldset>
             <legend>Discovered models</legend>
