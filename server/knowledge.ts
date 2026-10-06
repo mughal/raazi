@@ -242,9 +242,15 @@ export async function embeddings(
   onProgress?: (completed: number, total: number) => void,
 ) {
   const vectors: number[][] = [];
+  const batchSize = Number(process.env.EMBEDDING_BATCH_SIZE || 2);
+  if (!Number.isInteger(batchSize) || batchSize < 1 || batchSize > 16)
+    throw new Failure(
+      500,
+      "EMBEDDING_BATCH_SIZE must be an integer from 1 to 16.",
+    );
   try {
-    for (let n = 0; n < texts.length; n += 16) {
-      const batch = texts.slice(n, n + 16),
+    for (let n = 0; n < texts.length; n += batchSize) {
+      const batch = texts.slice(n, n + batchSize),
         response = await request(
           s.embedding_url + "/embeddings",
           { model: s.embedding_model, input: batch, encoding_format: "float" },

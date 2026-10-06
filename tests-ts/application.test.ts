@@ -1836,7 +1836,7 @@ it("strict vector retrieval drops unrelated sections below its cosine threshold"
   expect(response.body.sources).toEqual([]);
 });
 
-it("indexes large documents using batches within Aigate's 16-text limit", async () => {
+it("indexes large documents in batches below TEI's four-permit capacity", async () => {
   const rid = await repo();
   await mutate("put", "/api/admin/embeddings", {
     enabled: true,
@@ -1849,7 +1849,7 @@ it("indexes large documents using batches within Aigate's 16-text limit", async 
     if (url.endsWith("/embeddings")) {
       sizes.push(body.input.length);
       if (body.input.length > 16)
-        throw new Error("Gateway rejects more than 16 texts");
+        throw new Error("Engine permit capacity exceeded");
     }
     return mockRequest(url, body);
   };
@@ -1860,7 +1860,7 @@ it("indexes large documents using batches within Aigate's 16-text limit", async 
   });
   expect(uploaded.status).toBe(201);
   expect(sizes.length).toBeGreaterThan(1);
-  expect(Math.max(...sizes)).toBe(16);
+  expect(Math.max(...sizes)).toBe(2);
   const doc = service.knowledge.documents()[0];
   expect(doc.status).toBe("ready");
   expect(doc.index_completed).toBe(doc.index_total);
