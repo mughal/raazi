@@ -229,6 +229,7 @@ async function requestEmbeddingBatch(
   url: string,
   body: unknown,
   key: string,
+  onWait?: (seconds: number) => void,
 ) {
   for (let attempt = 0; ; attempt++) {
     try {
@@ -241,9 +242,10 @@ async function requestEmbeddingBatch(
       )
         throw error;
       const delay = Math.min(
-        5000,
+        120000,
         Math.max(0, error.retryAfterMs ?? 500 * 2 ** attempt),
       );
+      onWait?.(Math.ceil(delay / 1000));
       await new Promise((resolve) => setTimeout(resolve, delay));
     }
   }
@@ -265,10 +267,20 @@ export const requestJSON: RequestJSON = async (url, body, key) => {
       retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter)
         ? Number(retryAfter)
         : undefined;
-    throw new InferenceHTTPError(
-      response.status,
-      seconds === undefined ? undefined : seconds * 1000,
-    );
+    let retryMs = seconds === undefined ? undefined : seconds * 1000;
+    if (response.status === 429 && retryMs === undefined) {
+      try {
+        const error = await response.json();
+        if (
+          error?.error?.message ===
+          "Request limit exceeded; retry in one minute."
+        )
+          retryMs = 61000;
+      } catch {
+        /* Keep the bounded default retry for unknown responses. */
+      }
+    }
+    throw new InferenceHTTPError(response.status, retryMs);
   }
   return response.json();
 };
@@ -278,6 +290,7 @@ export async function embeddings(
   texts: string[],
   request: RequestJSON = requestJSON,
   onProgress?: (completed: number, total: number) => void,
+  onWait?: (seconds: number) => void,
 ) {
   const vectors: number[][] = [];
   const batchSize = Number(process.env.EMBEDDING_BATCH_SIZE || 2);
@@ -294,6 +307,7 @@ export async function embeddings(
           s.embedding_url + "/embeddings",
           { model: s.embedding_model, input: batch, encoding_format: "float" },
           secrets.open(s.embedding_key),
+          onWait,
         );
       if (
         !Array.isArray(response.data) ||
@@ -433,9 +447,15 @@ export class Knowledge {
             this.request,
             (completed, total) =>
               this.db.run(
-                "UPDATE documents SET index_completed=?,index_total=? WHERE id=?",
+                "UPDATE documents SET index_stage='Creating embeddings',index_completed=?,index_total=? WHERE id=?",
                 completed,
                 total,
+                id,
+              ),
+            (seconds) =>
+              this.db.run(
+                "UPDATE documents SET index_stage=? WHERE id=?",
+                `Waiting for embedding capacity (retry in ${seconds} seconds)`,
                 id,
               ),
           )

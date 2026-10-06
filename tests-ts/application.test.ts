@@ -19,6 +19,7 @@ import {
   signature,
   embeddings,
   InferenceHTTPError,
+  requestJSON,
 } from "../server/knowledge";
 import { Secrets, LocalDB } from "../server/db";
 import { RequestJSON } from "../server/knowledge";
@@ -1908,4 +1909,27 @@ it("retries a busy embedding batch without duplicating vectors and bounds retrie
     }),
   ).rejects.toThrow("HTTP 400");
   expect(calls).toBe(1);
+});
+
+it("recognizes Aigate's minute rate limit without exposing its response body", async () => {
+  vi.stubGlobal(
+    "fetch",
+    async () =>
+      new Response(
+        JSON.stringify({
+          error: { message: "Request limit exceeded; retry in one minute." },
+        }),
+        { status: 429, headers: { "Content-Type": "application/json" } },
+      ),
+  );
+  try {
+    await requestJSON("http://gateway.test/v1/embeddings", {}, "test-key");
+    throw new Error("Expected failure");
+  } catch (error) {
+    expect(error).toBeInstanceOf(InferenceHTTPError);
+    expect((error as InferenceHTTPError).retryAfterMs).toBe(61000);
+    expect((error as Error).message).toBe(
+      "Inference endpoint returned HTTP 429.",
+    );
+  }
 });
