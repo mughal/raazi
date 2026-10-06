@@ -216,6 +216,38 @@ export type RequestJSON = (
   body: unknown,
   key: string,
 ) => Promise<any>;
+export class InferenceHTTPError extends Failure {
+  constructor(
+    public upstreamStatus: number,
+    public retryAfterMs?: number,
+  ) {
+    super(502, `Inference endpoint returned HTTP ${upstreamStatus}.`);
+  }
+}
+async function requestEmbeddingBatch(
+  request: RequestJSON,
+  url: string,
+  body: unknown,
+  key: string,
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await request(url, body, key);
+    } catch (error) {
+      if (
+        !(error instanceof InferenceHTTPError) ||
+        error.upstreamStatus !== 429 ||
+        attempt >= 3
+      )
+        throw error;
+      const delay = Math.min(
+        5000,
+        Math.max(0, error.retryAfterMs ?? 500 * 2 ** attempt),
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+}
 export const requestJSON: RequestJSON = async (url, body, key) => {
   const response = await fetch(url, {
     method: "POST",
@@ -227,11 +259,17 @@ export const requestJSON: RequestJSON = async (url, body, key) => {
     redirect: "error",
     signal: AbortSignal.timeout(120000),
   });
-  if (!response.ok)
-    throw new Failure(
-      502,
-      `Inference endpoint returned HTTP ${response.status}.`,
+  if (!response.ok) {
+    const retryAfter = response.headers.get("retry-after");
+    const seconds =
+      retryAfter && /^\d+(?:\.\d+)?$/.test(retryAfter)
+        ? Number(retryAfter)
+        : undefined;
+    throw new InferenceHTTPError(
+      response.status,
+      seconds === undefined ? undefined : seconds * 1000,
     );
+  }
   return response.json();
 };
 export async function embeddings(
@@ -251,7 +289,8 @@ export async function embeddings(
   try {
     for (let n = 0; n < texts.length; n += batchSize) {
       const batch = texts.slice(n, n + batchSize),
-        response = await request(
+        response = await requestEmbeddingBatch(
+          request,
           s.embedding_url + "/embeddings",
           { model: s.embedding_model, input: batch, encoding_format: "float" },
           secrets.open(s.embedding_key),

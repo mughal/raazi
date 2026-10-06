@@ -18,6 +18,7 @@ import {
   chunkUnits,
   signature,
   embeddings,
+  InferenceHTTPError,
 } from "../server/knowledge";
 import { Secrets, LocalDB } from "../server/db";
 import { RequestJSON } from "../server/knowledge";
@@ -1865,4 +1866,46 @@ it("indexes large documents in batches below TEI's four-permit capacity", async 
   expect(doc.status).toBe("ready");
   expect(doc.index_completed).toBe(doc.index_total);
   expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(doc.index_total);
+});
+
+it("retries a busy embedding batch without duplicating vectors and bounds retries", async () => {
+  const settings = {
+    embedding_url: "http://embed.test/v1",
+    embedding_model: "embed",
+    embedding_dimensions: 3,
+    embedding_key: "",
+  };
+  const keys = new Secrets(root, "development");
+  let calls = 0;
+  const progress: number[] = [];
+  const result = await embeddings(
+    settings,
+    keys,
+    ["leave", "travel"],
+    async (url, body) => {
+      calls++;
+      if (calls < 3) throw new InferenceHTTPError(429, 0);
+      return mockRequest(url, body);
+    },
+    (count) => progress.push(count),
+  );
+  expect(calls).toBe(3);
+  expect(result).toHaveLength(2);
+  expect(progress).toEqual([2]);
+  calls = 0;
+  await expect(
+    embeddings(settings, keys, ["leave"], async () => {
+      calls++;
+      throw new InferenceHTTPError(429, 0);
+    }),
+  ).rejects.toThrow("HTTP 429");
+  expect(calls).toBe(4);
+  calls = 0;
+  await expect(
+    embeddings(settings, keys, ["leave"], async () => {
+      calls++;
+      throw new InferenceHTTPError(400);
+    }),
+  ).rejects.toThrow("HTTP 400");
+  expect(calls).toBe(1);
 });
