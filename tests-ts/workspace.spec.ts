@@ -382,6 +382,17 @@ test("chat + uploads private PDFs and images, opens page citations, and restores
   await expect(page.locator(".composer .attachment-chip")).toContainText(
     "Private knowledge",
   );
+  await expect(page.locator(".composer .attachment-chip")).toContainText(
+    "Ready",
+  );
+  await expect(page.locator(".composer .attachment-chip")).toHaveCSS(
+    "border-top-color",
+    "rgb(39, 131, 75)",
+  );
+  await expect(
+    page.getByRole("button", { name: "Upload files" }),
+  ).toHaveAttribute("title", /PDF, DOCX, TXT, Markdown/);
+
   await page
     .getByLabel("Message Raazi")
     .fill("Travel expenses manager approval");

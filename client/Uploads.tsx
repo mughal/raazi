@@ -19,7 +19,7 @@ export function AttachmentChips({
         <div
           className={
             "attachment-chip " +
-            (file.status === "ready" ? "" : "attachment-error")
+            (file.status === "ready" ? "attachment-ready" : "attachment-error")
           }
           key={file.id}
         >
@@ -35,11 +35,17 @@ export function AttachmentChips({
             <small>
               {file.status === "ready"
                 ? file.kind === "image"
-                  ? "Image"
+                  ? "Ready · Image"
                   : file.search_mode === "vector"
-                    ? "Private knowledge"
-                    : "Text search"
-                : file.status.replaceAll("_", " ")}
+                    ? "Ready · Private knowledge"
+                    : "Ready · Text search"
+                : file.status === "unsupported"
+                  ? "Not readable"
+                  : file.status === "failed"
+                    ? "Indexing failed"
+                    : file.status === "needs_reindex"
+                      ? "Needs reindex"
+                      : file.status.replaceAll("_", " ")}
             </small>
             {(file.error || file.warning) && (
               <small>{file.error || file.warning}</small>

@@ -652,7 +652,11 @@ function App() {
                       type="button"
                       className="upload-button"
                       aria-label="Upload files"
-                      title="Upload a document or image"
+                      title={
+                        workspace.supports_images
+                          ? "Upload PDF, DOCX, TXT, Markdown (20 MB), or PNG, JPEG, WebP (10 MB)"
+                          : "Upload PDF, DOCX, TXT, or Markdown (20 MB). Image input is off."
+                      }
                       aria-describedby="upload-help"
                       disabled={
                         busy || !workspace.uploads_enabled || files.length >= 5
@@ -737,9 +741,9 @@ function App() {
                 </div>
                 <p id="upload-help" className="upload-help">
                   {workspace.uploads_enabled
-                    ? "Files stay private. Documents: 20 MB." +
+                    ? "Files stay private. PDF, DOCX, TXT, Markdown: 20 MB." +
                       (workspace.supports_images
-                        ? " Images: 10 MB."
+                        ? " PNG, JPEG, WebP: 10 MB."
                         : " Image input is off.")
                     : "Uploads are off. Ask an admin to configure S3 storage."}
                 </p>

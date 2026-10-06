@@ -182,3 +182,7 @@ Platform branding: Administration > Platform saves a display name (1-80 characte
 Embedding settings include Test connection. It tests the entered endpoint, model, dimensions, and key without saving settings or changing document indexes. A blank key uses the saved key unless Remove saved embedding key is selected. Success shows the model and returned dimensions. Save still validates the connection before applying settings.
 
 Models and Embeddings each have an independent Test connection button beside their save control. Tests use current form values and the saved key when the key field is blank. Model testing sends a short inference request and checks for returned text; it does not create a chat or save settings. Embedding testing checks returned vectors.
+
+Bucket-test failures now classify known TLS, DNS, connection, authentication, and HTTP errors using fixed messages. Raw upstream messages and keys are not returned. HeadBucket can return a generic 403, which does not prove whether credentials or permissions failed. Live Pacific diagnosis still requires target-host testing.
+
+Attachment chips show Ready with a green border after indexing. Unreadable documents show Not readable and extraction details; indexing failures remain distinct. Upload tooltip and composer help list supported file types and size limits, with images conditional on the selected model.

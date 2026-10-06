@@ -235,3 +235,28 @@ it("uses the real AWS SDK against an HTTP S3 fixture with signed HEAD, PUT, GET,
     );
   }
 });
+
+it("reports safe bucket access diagnostics without revealing upstream secrets", async () => {
+  const cases = [
+    [{ cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }, "TLS certificate chain"],
+    [{ code: "ENOTFOUND" }, "cannot resolve"],
+    [{ name: "SignatureDoesNotMatch" }, "signature was rejected"],
+    [{ $metadata: { httpStatusCode: 403 } }, "HTTP 403"],
+    [{ message: "secret-do-not-expose" }, "certificate trust"],
+  ] as const;
+  for (const [failure, text] of cases) {
+    service.storage.factory = () => ({
+      ...store.factory(storageInput),
+      head: async () => {
+        throw { ...failure, message: "secret-do-not-expose" };
+      },
+    });
+    const response = await admin
+      .post("/api/admin/storage/test")
+      .set("X-CSRF-Token", csrf)
+      .send(storageInput);
+    expect(response.status).toBe(502);
+    expect(JSON.stringify(response.body)).toContain(text);
+    expect(JSON.stringify(response.body)).not.toContain("secret-do-not-expose");
+  }
+});

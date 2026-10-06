@@ -2162,3 +2162,10 @@ label > select {
     margin-bottom: 0;
   }
 }
+
+.attachment-chip.attachment-ready {
+  border-color: #27834b;
+}
+.attachment-ready small:first-of-type {
+  color: #216b3e;
+}

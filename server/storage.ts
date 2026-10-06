@@ -37,6 +37,60 @@ export interface ObjectClient {
   close(): void;
 }
 export type ObjectFactory = (settings: StorageConfig) => ObjectClient;
+function storageTestHint(error: unknown): string {
+  const hints: Record<string, string> = {
+    CERT_HAS_EXPIRED: "The TLS certificate has expired.",
+    DEPTH_ZERO_SELF_SIGNED_CERT:
+      "The TLS certificate is self-signed. Install the storage CA certificate in the app container.",
+    SELF_SIGNED_CERT_IN_CHAIN:
+      "The TLS certificate chain is not trusted. Install the storage CA chain in the app container.",
+    UNABLE_TO_VERIFY_LEAF_SIGNATURE:
+      "The TLS certificate chain cannot be verified. Install the issuing CA chain in the app container.",
+    UNABLE_TO_GET_ISSUER_CERT_LOCALLY:
+      "The issuing TLS CA is not trusted by the app container.",
+    ERR_TLS_CERT_ALTNAME_INVALID:
+      "The endpoint hostname does not match the TLS certificate.",
+    ENOTFOUND: "The app container cannot resolve the endpoint hostname.",
+    EAI_AGAIN: "DNS lookup failed. Check DNS from the app container.",
+    ECONNREFUSED:
+      "The endpoint refused the connection. Check the port and service.",
+    ETIMEDOUT:
+      "The connection timed out. Check routing and firewall access from the app container.",
+    AbortError: "The storage request timed out.",
+    TimeoutError: "The storage request timed out.",
+    AccessDenied:
+      "Access was denied. Check the keys and bucket permissions, including bucket access (HeadBucket).",
+    InvalidAccessKeyId: "The access key ID was rejected.",
+    SignatureDoesNotMatch:
+      "The signature was rejected. Check the secret key, signing region, and server clock.",
+    AuthorizationHeaderMalformed:
+      "The authentication header was rejected. Check the signing region.",
+    RequestTimeTooSkewed:
+      "The server clock differs from the storage clock. Check time synchronization.",
+    NoSuchBucket:
+      "The bucket was not found. Check the bucket name and endpoint.",
+  };
+  let value: any = error;
+  const seen = new Set();
+  let status: number | undefined;
+  for (let i = 0; value && i < 5 && !seen.has(value); i++) {
+    seen.add(value);
+    for (const code of [value.code, value.name])
+      if (typeof code === "string" && Object.hasOwn(hints, code))
+        return hints[code];
+    status ??= value.$metadata?.httpStatusCode;
+    value = value.cause;
+  }
+  if (status === 403)
+    return "HTTP 403: storage denied access. Check keys and bucket access permissions. This response does not identify which one failed.";
+  if (status === 404)
+    return "HTTP 404: check the S3 endpoint, bucket name, and path-style addressing.";
+  if (status === 301 || status === 307)
+    return "Storage redirected the request. Check the S3 endpoint and signing region.";
+  if (status && Number.isInteger(status) && status >= 400 && status <= 599)
+    return `Storage returned HTTP ${status}. Check the S3 endpoint and storage service.`;
+  return "Check the endpoint, keys, bucket permissions, and certificate trust.";
+}
 const MAX_OBJECT = 20 * 1024 * 1024;
 export const s3Factory: ObjectFactory = (s) => {
   const client = new S3Client({
@@ -246,9 +300,7 @@ export class ObjectStorage {
     if (error)
       throw new Failure(
         502,
-        "Bucket test failed during " +
-          step +
-          ". Check the endpoint, keys, and bucket permissions.",
+        "Bucket test failed during " + step + ". " + storageTestHint(error),
       );
     return { accessible: true, writable: true, readable: true, cleanup: true };
   }
