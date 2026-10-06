@@ -34,26 +34,7 @@ export const mockRequest = async (url: string, body: any) =>
         choices: [
           {
             message: {
-              content: body.messages?.[0]?.content.startsWith(
-                "You answer only from the supplied DOCUMENTS",
-              )
-                ? JSON.stringify({
-                    answerable: true,
-                    answer:
-                      "The answer is supported by the retrieved policy [1].",
-                    evidence: [
-                      {
-                        source: 1,
-                        quote: body.messages[0].content
-                          .split("\nDOCUMENTS:\n")[1]
-                          .split("\n")
-                          .slice(1)
-                          .join("\n")
-                          .split("\n\n")[0],
-                      },
-                    ],
-                  })
-                : "The answer is supported by the retrieved policy [1].",
+              content: "The answer is supported by the retrieved policy [1].",
             },
           },
         ],

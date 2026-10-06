@@ -135,3 +135,16 @@ Set deployment rate and concurrency limits for your workload. Watch error rates,
 Run one app replica. Multiple replicas require a durable job queue and distributed coordination, which are not implemented.
 
 For Docker build and Compose behavior, see the [Docker build specification](https://docs.docker.com/reference/compose-file/build/).
+
+## Validate knowledge before rollout
+
+Push the tested dev commit to the GitLab upstream used by Linux. Run `bash raazictl update` and `bash raazictl restart`, then refresh the browser. These code changes do not need an image build or document reindex.
+
+1. Confirm manuals are Ready under Administration > Knowledge.
+2. Leave General chat selected. Confirm shared knowledge is not searched.
+3. Select Department Manuals. Ask a question with a known answer and check its citation and original-file link.
+4. Ask a question absent from the manuals. Confirm the answer declines to invent information.
+5. Ask for a summary. Check the sampled-overview notice and citations.
+6. Test with a normal user who has the intended repository permission.
+
+Fixture checks do not replace these checks against the deployed inference engine and real manuals. Review factual accuracy before wider access.

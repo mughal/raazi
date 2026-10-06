@@ -686,7 +686,7 @@ function App() {
                       value={repository}
                       onChange={(e) => setRepository(e.target.value)}
                     >
-                      <option value="">All available knowledge</option>
+                      <option value="">General chat</option>
                       {workspace.repositories.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.name}

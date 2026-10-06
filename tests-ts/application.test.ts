@@ -1434,7 +1434,7 @@ it("discovers multiple models, exposes only approved models, and keeps provider 
     ).status,
   ).toBe(400);
 });
-it("routes through Jev to an approved provider and searches only accessible knowledge", async () => {
+it("routes through Jev without searching unselected shared knowledge", async () => {
   await configure();
   const local = await addProvider("Alt", "openai-compatible", ["expert"]);
   const jev = await addProvider("Jev", "typesafe", ["jev-latest"]);
@@ -1461,9 +1461,9 @@ it("routes through Jev to an approved provider and searches only accessible know
     use_decision: true,
   });
   expect(answer.status).toBe(200);
-  expect(answer.body.content).toContain("Decision route: knowledge");
+  expect(answer.body.content).toContain("Decision route: direct");
   expect(answer.body.content).toContain("Alt / expert");
-  expect(answer.body.sources.length).toBeGreaterThan(0);
+  expect(answer.body.sources).toEqual([]);
   expect(calls[0].url).toBe("http://jev.test/v1/systemone");
   expect(calls[0].body.questions.target.criteria.m1).toBe("Alt / expert");
   expect(calls[1].url).toBe("http://alt.test/v1/chat/completions");
@@ -1779,14 +1779,14 @@ it("repository-only answers abstain without hits, stale indexes, or verified evi
   expect(calls).toBe(0);
   handler = async (_url, body: any) => {
     expect(body.messages).toHaveLength(2);
-    expect(body.messages[0].content).toContain("Never use general knowledge");
+    expect(body.messages[0].content).toContain("Do not use general knowledge");
     return {
       choices: [
         {
           message: {
             content: JSON.stringify({
               answerable: true,
-              answer: "Made up policy [1]",
+              answer: "Made up policy [99]",
               evidence: [{ source: 1, quote: "This quote is invented" }],
             }),
           },
@@ -1799,9 +1799,7 @@ it("repository-only answers abstain without hits, stale indexes, or verified evi
     repository_id: rid,
     use_decision: true,
   });
-  expect(refused.body.content).toContain(
-    "model did not return an answer with verifiable evidence",
-  );
+  expect(refused.body.content).toContain("model did not cite them correctly");
   expect(refused.body.sources).toEqual([]);
   handler = mockRequest;
   const grounded = await mutate("post", "/api/chat", {
@@ -1979,6 +1977,56 @@ it("accepts fenced grounded JSON and whitespace differences, and summarizes repo
     (
       await mutate("post", "/api/chat", {
         message: "leave",
+        repository_id: rid,
+      })
+    ).body.content,
+  ).toContain("couldn't find relevant information");
+});
+
+it("general chat does not search shared repositories unless one is selected", async () => {
+  await configure();
+  const rid = await repo();
+  await addDoc(rid);
+  const search = vi.spyOn(service.knowledge, "retrieve");
+  let prompt = "";
+  handler = async (_url, body: any) => {
+    prompt = body.messages[0].content;
+    return { choices: [{ message: { content: "General model answer." } }] };
+  };
+  const general = await mutate("post", "/api/chat", {
+    message: "annual leave",
+  });
+  expect(general.body.content).toBe("General model answer.");
+  expect(general.body.sources).toEqual([]);
+  expect(prompt).not.toContain("Annual leave allowance is 25 days.");
+  expect(search).not.toHaveBeenCalled();
+  handler = async (_url, body: any) => {
+    expect(body.messages[0].content).toContain("Do not return JSON");
+    return {
+      choices: [
+        {
+          message: {
+            content: "The manual allows 25 days of annual leave [1].",
+          },
+        },
+      ],
+    };
+  };
+  const grounded = await mutate("post", "/api/chat", {
+    message: "annual leave",
+    repository_id: rid,
+  });
+  expect(grounded.body.content).toBe(
+    "The manual allows 25 days of annual leave [1].",
+  );
+  expect(grounded.body.sources).toHaveLength(1);
+  handler = async () => ({
+    choices: [{ message: { content: "NO_EVIDENCE" } }],
+  });
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "annual leave",
         repository_id: rid,
       })
     ).body.content,

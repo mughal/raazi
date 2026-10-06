@@ -277,6 +277,9 @@ test("React workspace: settings, real uploads, citations, folders, persisted cha
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "New chat in folder" }).click();
   await page
+    .getByLabel("Knowledge repository")
+    .selectOption({ label: "Policies" });
+  await page
     .getByLabel("Message Raazi")
     .fill("Travel expenses manager approval");
   await page.getByRole("button", { name: "Send message" }).click();
@@ -737,7 +740,7 @@ test("admins discover providers and users select models or enable Jev routing", 
   await page.getByLabel("Message Raazi").fill("Annual leave allowance");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".message.assistant").last()).toContainText(
-    "Decision route: knowledge",
+    "Decision route: direct",
   );
   await expect(page.locator(".message.assistant").last()).toContainText(
     "Local test / expert",
@@ -751,7 +754,7 @@ test("admins discover providers and users select models or enable Jev routing", 
     .getByRole("button", { name: "Provider selection check", exact: true })
     .click();
   await expect(page.locator(".message.assistant").last()).toContainText(
-    "Decision route: knowledge",
+    "Decision route: direct",
   );
 });
 
@@ -1056,4 +1059,34 @@ test("knowledge multiselect and composer file drops accept several documents", a
   await expect(page.locator(".composer .attachment-ready")).toHaveCount(2);
   await expect(page.locator(".composer")).toContainText("drop-one.txt");
   await expect(page.locator(".composer")).toContainText("drop-two.txt");
+});
+
+test("general chat is default and named knowledge returns normal cited answers", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const selector = page.getByLabel("Knowledge repository");
+  await expect(selector).toHaveValue("");
+  await expect(selector.locator("option:checked")).toHaveText("General chat");
+  await page
+    .getByLabel("Message Raazi")
+    .fill("Travel expenses manager approval");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toBeVisible();
+  await expect(page.locator(".message.assistant .citation")).toHaveCount(0);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await selector.selectOption({ label: "Policies" });
+  await page
+    .getByLabel("Message Raazi")
+    .fill("Travel expenses manager approval");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toContainText(
+    "The answer is supported",
+  );
+  await expect(
+    page.locator(".message.assistant .citation").first(),
+  ).toHaveAttribute("href", /sources/);
 });
