@@ -724,7 +724,10 @@ test("admins discover providers and users select models or enable Jev routing", 
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await expect(
     page.getByRole("switch", { name: /Use decision model/ }),
-  ).toBeEnabled();
+  ).toHaveCount(0);
+  await expect(
+    page.getByText("Decision routing enabled by administrator"),
+  ).toBeVisible();
   await page.getByLabel("Selected model").click();
   await page
     .locator(".model-menu")
@@ -733,10 +736,10 @@ test("admins discover providers and users select models or enable Jev routing", 
   await page.getByLabel("Message Raazi").fill("Provider selection check");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".message.assistant")).toHaveCount(1);
-  await expect(page.locator(".message.assistant")).not.toContainText(
+  await expect(page.locator(".message.assistant")).toContainText(
     "Decision route",
   );
-  await page.getByRole("switch", { name: /Use decision model/ }).check();
+
   await page.getByLabel("Message Raazi").fill("Annual leave allowance");
   await page.getByRole("button", { name: "Send message" }).click();
   await expect(page.locator(".message.assistant").last()).toContainText(
@@ -756,6 +759,14 @@ test("admins discover providers and users select models or enable Jev routing", 
   await expect(page.locator(".message.assistant").last()).toContainText(
     "Decision route: direct",
   );
+  const session = await (await page.request.get("/api/session")).json();
+  const providers = await (
+    await page.request.get("/api/admin/providers")
+  ).json();
+  await page.request.put("/api/admin/routing", {
+    headers: { "X-CSRF-Token": session.csrf },
+    data: { ...providers.routing, enabled: false },
+  });
 });
 
 test("model display names and thinking switch keep reasoning separate across reload and copy", async ({
@@ -1089,4 +1100,32 @@ test("general chat is default and named knowledge returns normal cited answers",
   await expect(
     page.locator(".message.assistant .citation").first(),
   ).toHaveAttribute("href", /sources/);
+});
+
+test("administrators can inspect recorded usage and change its period", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Usage", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "User usage" })).toBeVisible();
+  await expect(
+    page.getByText(/model calls reported both token counts/),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Input tokens" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: "Token coverage" }),
+  ).toBeVisible();
+  await page.getByLabel("Usage period").selectOption("7");
+  await page.getByRole("button", { name: "Refresh usage" }).click();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.screenshot({ path: "data/react-admin-usage.png", fullPage: true });
 });

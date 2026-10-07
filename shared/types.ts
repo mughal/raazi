@@ -74,6 +74,8 @@ export interface Provider {
   has_api_key: boolean;
 }
 export interface RoutingSettings {
+  audience: "all" | "selected";
+  user_ids: string[];
   enabled: boolean;
   provider_id: string;
   model: string;

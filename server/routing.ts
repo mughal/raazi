@@ -63,6 +63,8 @@ export const providerSchema = z
 export const routingSchema = z
   .object({
     enabled: z.boolean(),
+    audience: z.enum(["all", "selected"]).default("all"),
+    user_ids: z.array(z.string().min(1).max(500)).max(1000).default([]),
     provider_id: z.string().max(100).default(""),
     model: z.string().max(200).default(""),
     threshold: z.number().min(0.5).max(1).default(0.8),
@@ -107,6 +109,16 @@ export class Routing {
       CREATE TABLE IF NOT EXISTS routing_settings(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,provider_id TEXT NOT NULL DEFAULT '',model TEXT NOT NULL DEFAULT '',threshold REAL NOT NULL DEFAULT 0.8,default_model TEXT NOT NULL DEFAULT '');
       INSERT OR IGNORE INTO routing_settings(id) VALUES(1);
     `);
+    for (const [name, ddl] of Object.entries({
+      audience: "TEXT NOT NULL DEFAULT 'all'",
+      user_ids: "TEXT NOT NULL DEFAULT '[]'",
+    }))
+      if (
+        !db
+          .all("PRAGMA table_info(routing_settings)")
+          .some((c) => c.name === name)
+      )
+        db.raw.exec(`ALTER TABLE routing_settings ADD COLUMN ${name} ${ddl}`);
     if (
       !db
         .all("PRAGMA table_info(model_providers)")
@@ -136,11 +148,19 @@ export class Routing {
     const s = this.db.get("SELECT * FROM routing_settings WHERE id=1")!;
     return {
       enabled: !!s.enabled,
+      audience: s.audience,
+      user_ids: JSON.parse(s.user_ids),
       provider_id: s.provider_id,
       model: s.model,
       threshold: s.threshold,
       default_model: s.default_model,
     };
+  }
+  applies(userId: string) {
+    const s = this.settings();
+    return (
+      this.available() && (s.audience === "all" || s.user_ids.includes(userId))
+    );
   }
   saveProvider(id: string | undefined, input: z.infer<typeof providerSchema>) {
     const prior = id
@@ -301,12 +321,14 @@ export class Routing {
     )
       throw new Failure(400, "Default chat model is not available.");
     this.db.run(
-      "UPDATE routing_settings SET enabled=?,provider_id=?,model=?,threshold=?,default_model=? WHERE id=1",
+      "UPDATE routing_settings SET enabled=?,provider_id=?,model=?,threshold=?,default_model=?,audience=?,user_ids=? WHERE id=1",
       Number(input.enabled),
       input.provider_id,
       input.model,
       input.threshold,
       input.default_model,
+      input.audience,
+      JSON.stringify(input.user_ids),
     );
   }
   async discover(id: string) {

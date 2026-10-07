@@ -1544,7 +1544,7 @@ it("low decision confidence asks for clarification; routing errors preserve save
   ).toBe(502);
   expect((await admin.get("/api/conversations/" + id)).body).toEqual(before);
 });
-it("supports a local JSON decision model and honors the switch being off", async () => {
+it("enforces administrator routing regardless of the legacy chat switch", async () => {
   await configure();
   await addProvider("Alt", "openai-compatible", ["expert"]);
   const decision = await addProvider(
@@ -1591,6 +1591,18 @@ it("supports a local JSON decision model and honors the switch being off", async
       })
     ).status,
   ).toBe(200);
+  expect(calls).toEqual([
+    "http://router.test/v1/chat/completions",
+    "http://alt.test/v1/chat/completions",
+  ]);
+  await mutate("put", "/api/admin/routing", {
+    enabled: false,
+    provider_id: decision,
+    model: "router-model",
+    threshold: 0.8,
+  });
+  calls.length = 0;
+  await mutate("post", "/api/chat", { message: "Hello", use_decision: true });
   expect(calls).toEqual(["http://model.test/v1/chat/completions"]);
 });
 
@@ -1653,8 +1665,9 @@ it("routes image chats only to approved vision models and keeps image bytes out 
         attachment_ids: [file.body.id],
       })
     ).status,
-  ).toBe(400);
-  expect(calls).toHaveLength(0);
+  ).toBe(200);
+  expect(calls).toHaveLength(2);
+  calls.length = 0;
   const reply = await mutate("post", "/api/chat", {
     message: "Explain",
     use_decision: true,
@@ -2031,4 +2044,117 @@ it("general chat does not search shared repositories unless one is selected", as
       })
     ).body.content,
   ).toContain("couldn't find relevant information");
+});
+
+it("targets routing by user and reports actual usage with administrator access only", async () => {
+  await configure();
+  const router = await addProvider(
+    "Router",
+    "openai-compatible",
+    ["router-model"],
+    "decision",
+  );
+  const employee = await user();
+  await mutate("put", "/api/admin/routing", {
+    enabled: true,
+    audience: "selected",
+    user_ids: ["employee"],
+    provider_id: router,
+    model: "router-model",
+    threshold: 0.8,
+  });
+  handler = async (url) =>
+    url.includes("router.test")
+      ? {
+          choices: [
+            {
+              message: {
+                content: JSON.stringify({
+                  answers: {
+                    ...decisionReply("direct", "m0").answers,
+                    target: {
+                      type: "choice",
+                      choice: "m0",
+                      confidence: 0.95,
+                      probabilities: { m0: 1 },
+                    },
+                  },
+                }),
+              },
+            },
+          ],
+          usage: { prompt_tokens: 10, completion_tokens: 2 },
+        }
+      : {
+          choices: [{ message: { content: "Answer" } }],
+          usage: { prompt_tokens: 20, completion_tokens: 5 },
+        };
+  expect((await admin.get("/api/workspace")).body.routing_enabled).toBe(false);
+  await mutate("post", "/api/chat", {
+    message: "Admin question",
+    use_decision: true,
+  });
+  const response = await request(service.app)
+    .post("/api/chat")
+    .set("Cookie", employee.cookie)
+    .set("X-CSRF-Token", employee.csrf)
+    .send({ message: "Employee question", use_decision: false });
+  expect(response.status).toBe(200);
+  const report = (await admin.get("/api/admin/usage")).body;
+  expect(report.totals).toMatchObject({
+    questions: 2,
+    answered_requests: 2,
+    input_tokens: 50,
+    output_tokens: 12,
+    model_calls: 3,
+    reported_calls: 3,
+    decision_calls: 1,
+  });
+  expect(report.users.find((u: any) => u.user_id === "employee")).toMatchObject(
+    { questions: 1, input_tokens: 30, output_tokens: 7 },
+  );
+  expect(
+    (
+      await request(service.app)
+        .get("/api/admin/usage")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(403);
+  handler = async () => ({
+    choices: [{ message: { content: "Unknown usage" } }],
+  });
+  await mutate("post", "/api/chat", { message: "No token metadata" });
+  const missing = (await admin.get("/api/admin/usage")).body;
+  expect(missing.totals).toMatchObject({
+    questions: 3,
+    input_tokens: 50,
+    output_tokens: 12,
+    model_calls: 4,
+    reported_calls: 3,
+  });
+  service.db.run(
+    "UPDATE usage_questions SET created_at=?",
+    "2000-01-01T00:00:00.000Z",
+  );
+  expect(
+    (await admin.get("/api/admin/usage?days=7")).body.totals.questions,
+  ).toBe(0);
+});
+
+it("records failed inference without inventing token usage", async () => {
+  await configure();
+  handler = async () => {
+    throw new Error("Provider unavailable");
+  };
+  expect(
+    (await mutate("post", "/api/chat", { message: "A question" })).status,
+  ).toBe(502);
+  expect((await admin.get("/api/admin/usage")).body.totals).toMatchObject({
+    questions: 1,
+    failed_requests: 1,
+    model_calls: 1,
+    reported_calls: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+  });
 });

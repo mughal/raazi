@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api";
 import { Field } from "./ui";
 import { ThinkingSetting } from "./ThinkingSetting";
-import type { Provider, ProvidersData } from "../shared/types";
+import type { Provider, ProvidersData, User } from "../shared/types";
 export function ModelProviders({
   notify,
   refresh,
@@ -11,6 +11,7 @@ export function ModelProviders({
   refresh: () => Promise<void>;
 }) {
   const [data, setData] = useState<ProvidersData | null>(null),
+    [users, setUsers] = useState<User[]>([]),
     [editing, setEditing] = useState<Provider | null>(null),
     [models, setModels] = useState(""),
     [found, setFound] = useState<string[]>([]),
@@ -19,6 +20,9 @@ export function ModelProviders({
   const load = async () =>
     setData(await api<ProvidersData>("/api/admin/providers"));
   useEffect(() => {
+    void api<{ users: User[] }>("/api/admin")
+      .then((result) => setUsers(result.users))
+      .catch((e) => setError(e.message));
     void load().catch((e) => setError(e.message));
   }, []);
   async function act(fn: () => Promise<unknown>, message: string) {
@@ -302,6 +306,8 @@ export function ModelProviders({
             () =>
               api("/api/admin/routing", "PUT", {
                 enabled: f.has("enabled"),
+                audience: String(f.get("audience")),
+                user_ids: f.getAll("user_ids").map(String),
                 provider_id: String(f.get("provider_id") ?? ""),
                 model: String(f.get("model") ?? ""),
                 threshold: Number(f.get("threshold")),
@@ -313,10 +319,10 @@ export function ModelProviders({
       >
         <h3>Decision routing</h3>
         <p>
-          Enable the switch below the composer. The decision provider receives
-          the question, recent messages, and filenames. It chooses an approved
-          chat model and a direct answer, knowledge search, or clarification. No
-          external actions are executed.
+          Administrators control routing for the chosen users. The decision
+          provider receives the question, recent messages, and filenames. It
+          chooses an approved chat model and a direct answer, knowledge search,
+          or clarification. No external actions are executed.
         </p>
         <label className="checkbox-label">
           <input
@@ -326,6 +332,27 @@ export function ModelProviders({
           />
           Enable decision routing
         </label>
+        <Field label="Apply decision routing to">
+          <select name="audience" defaultValue={data.routing.audience}>
+            <option value="all">All users</option>
+            <option value="selected">Selected users only</option>
+          </select>
+        </Field>
+        <Field label="Selected users">
+          <select name="user_ids" multiple defaultValue={data.routing.user_ids}>
+            {users
+              .filter((u) => !u.disabled)
+              .map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.name} ({u.email || u.id})
+                </option>
+              ))}
+          </select>
+          <small>
+            Used only when Selected users is chosen. Hold Ctrl to select several
+            users.
+          </small>
+        </Field>
         <Field label="Decision provider">
           <select
             aria-label="Decision provider"

@@ -2169,3 +2169,28 @@ label > select {
 .attachment-ready small:first-of-type {
   color: #216b3e;
 }
+
+.usage-dashboard table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.85rem;
+}
+.usage-dashboard th,
+.usage-dashboard td {
+  padding: 0.8rem 0.65rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}
+.usage-dashboard th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+.usage-dashboard td small {
+  display: block;
+  margin-top: 0.25rem;
+}
+.usage-dashboard .grid h3 {
+  margin: 0.5rem 0 0;
+  font-size: 1.65rem;
+}

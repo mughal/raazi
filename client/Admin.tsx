@@ -1,3 +1,4 @@
+import { AdminUsage } from "./AdminUsage";
 import { useState, useEffect, FormEvent } from "react";
 import type {
   AdminData,
@@ -112,6 +113,7 @@ export function Admin({
           "Knowledge",
           "Users",
           "Sessions",
+          "Usage",
           "Audit",
         ].map((t) => (
           <button
@@ -177,6 +179,7 @@ export function Admin({
       {tab === "Providers" && (
         <ModelProviders notify={notify} refresh={refresh} />
       )}
+      {tab === "Usage" && <AdminUsage />}
       {tab === "Sessions" && (
         <AdminSessions notify={notify} onSessionEnded={onSessionEnded} />
       )}
