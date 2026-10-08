@@ -2158,3 +2158,36 @@ it("records failed inference without inventing token usage", async () => {
     output_tokens: 0,
   });
 });
+
+it("restricts manual backups and schedule changes to administrators", async () => {
+  const employee = await user();
+  expect(
+    (
+      await request(service.app)
+        .get("/api/admin/backups")
+        .set("Cookie", employee.cookie)
+    ).status,
+  ).toBe(403);
+  expect(
+    (
+      await request(service.app)
+        .post("/api/admin/backups")
+        .set("Cookie", employee.cookie)
+        .set("X-CSRF-Token", employee.csrf)
+    ).status,
+  ).toBe(403);
+  expect((await admin.post("/api/admin/backups")).status).toBe(403);
+  expect(
+    (
+      await mutate("put", "/api/admin/backups/schedule", {
+        enabled: true,
+        time: "02:00",
+      })
+    ).status,
+  ).toBe(400);
+  expect((await mutate("post", "/api/admin/backups")).status).toBe(202);
+  await service.backups.idle();
+  expect((await admin.get("/api/admin/backups")).body.runs[0].status).toBe(
+    "complete",
+  );
+});

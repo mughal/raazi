@@ -148,3 +148,30 @@ Push the tested dev commit to the GitLab upstream used by Linux. Run `bash raazi
 6. Test with a normal user who has the intended repository permission.
 
 Fixture checks do not replace these checks against the deployed inference engine and real manuals. Review factual accuracy before wider access.
+
+
+## Deploy and test Administration backups
+
+This release adds PostgreSQL 17 client tools to the runtime. [PostgreSQL documents](https://www.postgresql.org/docs/16/app-pgdump.html) that pg_dump cannot back up a newer server major version. Prepare the app image once; future code updates retain the mounted-code workflow:
+
+```bash
+bash raazictl update
+bash raazictl prepare app
+bash raazictl restart
+podman exec raazi-qa_app_1 pg_dump --version
+podman exec raazi-qa_app_1 pg_restore --version
+```
+
+In Administration > Backups, select Back up now. Wait for complete. Check that the configured bucket contains the SQLite file, PostgreSQL dump(s), and manifest under the workspace backups prefix. If PostgreSQL is not configured, the page explicitly identifies the SQLite-only backup.
+
+Optional restore procedure for a separate environment (not required to enable scheduling): download a set using the storage console or an approved S3 tool. Compare the files with the SHA-256 hashes in the manifest. Restore only into an isolated disposable PostgreSQL 17 instance with pgvector installed and an isolated copy of SQLite. For each dump, create a fresh empty database and run:
+
+```bash
+pg_restore --exit-on-error --no-owner --no-acl --dbname="$DISPOSABLE_RESTORE_DATABASE_URL" postgres-1.dump
+```
+
+Do not point this command at the live database. The dump contains the entire configured database, including other namespaces if present. Global PostgreSQL roles are not included; create the target role separately. Copy `raazi.sqlite` to the isolated app's DATABASE path. Use the original ENCRYPTION_KEY and keep the workspace namespace. Preserve SECRET_KEY and auth/environment configuration separately. Keep original bucket objects and versions available; the database backup contains references, not duplicate originals. Prevent the isolated app from deleting live objects, and disable its backup schedule before starting it (set `backup_schedule.enabled=0` and `next_run=NULL` in the restored SQLite file).
+
+Check users, settings, private chat history, document passages, vector retrieval, and original-file access. Restore testing can take place elsewhere and is not required to enable scheduling. Once the backup completes and its files are visible, enable daily backups and select the Asia/Karachi time. The app must run for scheduling. Retention keeps seven successful sets across manual and daily runs; inspect cleanup warnings. Bucket retention policies can prevent immediate deletion.
+
+Live Pacific upload/download and a PostgreSQL restore remain target-environment checks. Fixture dumps are not real PostgreSQL restore verification. Database snapshots are sequential while Raazi changes are paused; separate database writers need their own coordination.

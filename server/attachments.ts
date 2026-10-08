@@ -172,7 +172,9 @@ export class Attachments {
           warning,
           new Date().toISOString(),
         );
+        await this.storage.writeMetadata("attachments", id);
       } catch (e) {
+        this.db.run("DELETE FROM attachments WHERE id=?", id);
         await this.storage.delete(ref);
         throw e;
       }

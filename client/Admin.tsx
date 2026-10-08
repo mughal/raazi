@@ -1,3 +1,4 @@
+import { AdminBackups } from "./AdminBackups";
 import { AdminUsage } from "./AdminUsage";
 import { useState, useEffect, FormEvent } from "react";
 import type {
@@ -27,7 +28,24 @@ export function Admin({
   platformName,
   refreshPlatform,
 }: Props) {
-  const [tab, setTab] = useState("Models"),
+  const [tab, setTab] = useState(() => {
+      const saved = sessionStorage.getItem("raazi-admin-tab");
+      return [
+        "Platform",
+        "Models",
+        "Providers",
+        "Embeddings",
+        "Storage",
+        "Backups",
+        "Knowledge",
+        "Users",
+        "Sessions",
+        "Usage",
+        "Audit",
+      ].includes(saved ?? "")
+        ? saved!
+        : "Models";
+    }),
     [data, setData] = useState<AdminData | null>(null),
     [embedding, setEmbedding] = useState<EmbeddingSettings | null>(null),
     [storage, setStorage] = useState<StorageSettings | null>(null),
@@ -110,6 +128,7 @@ export function Admin({
           "Providers",
           "Embeddings",
           "Storage",
+          "Backups",
           "Knowledge",
           "Users",
           "Sessions",
@@ -123,6 +142,7 @@ export function Admin({
             className={tab === t ? "active" : ""}
             onClick={() => {
               setTab(t);
+              sessionStorage.setItem("raazi-admin-tab", t);
               setError("");
             }}
           >
@@ -179,6 +199,7 @@ export function Admin({
       {tab === "Providers" && (
         <ModelProviders notify={notify} refresh={refresh} />
       )}
+      {tab === "Backups" && <AdminBackups />}
       {tab === "Usage" && <AdminUsage />}
       {tab === "Sessions" && (
         <AdminSessions notify={notify} onSessionEnded={onSessionEnded} />

@@ -1,3 +1,4 @@
+import { writeFile } from "node:fs/promises";
 import { beforeEach, afterEach, it, expect } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -259,4 +260,148 @@ it("reports safe bucket access diagnostics without revealing upstream secrets", 
     expect(JSON.stringify(response.body)).toContain(text);
     expect(JSON.stringify(response.body)).not.toContain("secret-do-not-expose");
   }
+});
+
+it("streams small backups and uploads larger backups in checked multipart sections", async () => {
+  const received: {
+    key: string;
+    part: string | null;
+    size: number;
+    md5?: string;
+  }[] = [];
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url!, "http://fixture");
+    const hash = createHash("md5");
+    let size = 0;
+    for await (const part of req) {
+      size += part.length;
+      hash.update(part);
+    }
+    if (req.method === "POST" && url.searchParams.has("uploads")) {
+      res.setHeader("Content-Type", "application/xml");
+      res.end(
+        "<InitiateMultipartUploadResult><Bucket>test-bucket</Bucket><Key>large</Key><UploadId>fixture-upload</UploadId></InitiateMultipartUploadResult>",
+      );
+    } else if (req.method === "PUT") {
+      received.push({
+        key: url.pathname,
+        part: url.searchParams.get("partNumber"),
+        size,
+        md5: String(req.headers["content-md5"] ?? ""),
+      });
+      if (url.searchParams.has("partNumber"))
+        expect(req.headers["content-md5"]).toBe(hash.digest("base64"));
+      res.setHeader("ETag", '"fixture-etag"');
+      res.setHeader("x-amz-version-id", "version-1");
+      res.end();
+    } else if (req.method === "POST") {
+      res.setHeader("Content-Type", "application/xml");
+      res.setHeader("x-amz-version-id", "version-1");
+      res.end(
+        "<CompleteMultipartUploadResult><Bucket>test-bucket</Bucket><Key>large</Key><ETag>fixture-etag</ETag></CompleteMultipartUploadResult>",
+      );
+    } else {
+      res.statusCode = 400;
+      res.end();
+    }
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as { port: number };
+  const client = s3Factory({
+    ...storageInput,
+    endpoint: "http://127.0.0.1:" + address.port,
+  });
+  try {
+    const small = join(root, "small.backup"),
+      large = join(root, "large.backup");
+    await writeFile(small, Buffer.from("small backup"));
+    await writeFile(large, Buffer.alloc(32 * 1024 * 1024 + 117, 7));
+    expect(await client.putFile!("backups/small", small)).toEqual({
+      version_id: "version-1",
+    });
+    expect(await client.putFile!("backups/large", large)).toEqual({
+      version_id: "version-1",
+    });
+    expect(received.map((r) => r.size)).toEqual([12, 32 * 1024 * 1024, 117]);
+    expect(received.map((r) => r.part)).toEqual([null, "1", "2"]);
+  } finally {
+    client.close();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}, 15000);
+
+it("writes portable private metadata, exports no credentials and removes the companion on delete", async () => {
+  await service.storage.save(storageInput);
+  const file = await service.attachments.upload(
+    "dev-admin",
+    "confidential.txt",
+    Buffer.from("Private original text"),
+  );
+  const catalogue = service.storage.catalogue();
+  const entry = catalogue.files.find((f) => f.record_id === file.id)!;
+  expect(entry.access).toEqual({ scope: "private", owner_id: "dev-admin" });
+  expect(entry.filename).toBe("confidential.txt");
+  expect(entry.metadata!.key).toBe(entry.original.key + ".metadata.json");
+  const raw = [...store.objects.entries()]
+    .find(([key]) => key.endsWith(entry.metadata!.key))![1]
+    .toString();
+  expect(JSON.parse(raw).original.sha256).toBe(
+    createHash("sha256").update("Private original text").digest("hex"),
+  );
+  expect(raw).not.toContain(storageInput.secret_key);
+  expect(raw).not.toContain("Private original text");
+  expect((await admin.get("/api/admin/storage/catalogue")).status).toBe(200);
+  expect(
+    (await request(service.app).get("/api/admin/storage/catalogue")).status,
+  ).toBe(401);
+  expect(
+    (await admin.post("/api/admin/storage/metadata").set("X-CSRF-Token", csrf))
+      .body,
+  ).toEqual({ saved: 1, failed: 0 });
+  await service.attachments.remove("dev-admin", file.id);
+  expect(
+    [...store.objects.keys()].some(
+      (key) =>
+        key.endsWith(entry.original.key) || key.endsWith(entry.metadata!.key),
+    ),
+  ).toBe(false);
+});
+
+it("records repository labels and refreshes changed permissions without exposing originals", async () => {
+  await service.storage.save(storageInput);
+  const repo = Number(
+    service.db.run(
+      "INSERT INTO repositories(name,groups_json) VALUES(?,?)",
+      "Department Manuals",
+      '["hr"]',
+    ).lastInsertRowid,
+  );
+  const id = await service.knowledge.add(
+    repo,
+    "Leave guide",
+    "leave.txt",
+    Buffer.from("Leave instructions"),
+    true,
+  );
+  expect(
+    service.storage
+      .catalogue()
+      .files.find((f) => f.record_id === id && f.record_type === "documents")!
+      .access,
+  ).toMatchObject({
+    scope: "repository",
+    repository_name: "Department Manuals",
+    groups: ["hr"],
+  });
+  service.db.run(
+    "UPDATE repositories SET groups_json=? WHERE id=?",
+    '["management"]',
+    repo,
+  );
+  await service.storage.refreshMetadata();
+  const sidecar = [...store.objects.entries()]
+    .find(([key]) => key.endsWith(".metadata.json"))![1]
+    .toString();
+  expect(JSON.parse(sidecar).access.groups).toEqual(["management"]);
+  expect(sidecar).not.toContain("Leave instructions");
 });

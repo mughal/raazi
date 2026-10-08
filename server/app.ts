@@ -1,3 +1,4 @@
+import { Backups, type DumpDatabase } from "./backups.js";
 import { Usage } from "./usage.js";
 import { demoAnswer } from "./demo.js";
 import { Sessions } from "./sessions.js";
@@ -55,6 +56,7 @@ export interface Config {
   request?: RequestJSON;
   staticDir?: string;
   objectFactory?: ObjectFactory;
+  backupDump?: DumpDatabase;
 }
 const text = (max: number, required = false) =>
   required
@@ -152,12 +154,54 @@ export async function createApp(config: Config) {
     usage.wrap("decision", config.request ?? requestJSON),
     config.getRequest,
   );
+  const backups = new Backups(
+    db,
+    storage,
+    [
+      ...new Set(
+        [config.vectorURL, config.chatURL ?? config.vectorURL].filter(
+          (url): url is string => !!url,
+        ),
+      ),
+    ],
+    (fn) => knowledge.lock.run(fn),
+    config.backupDump,
+  );
+  app.use((req, res, next) => {
+    const mutation =
+      !["GET", "HEAD", "OPTIONS"].includes(req.method) &&
+      !req.path.startsWith("/api/admin/backups");
+    if (mutation && backups.busy)
+      return res.status(503).json({
+        error:
+          "A data backup is running. Changes are paused; please retry when it finishes.",
+      });
+    if (mutation) {
+      backups.mutations++;
+      let counted = true;
+      const release = () => {
+        if (counted) {
+          counted = false;
+          backups.mutations--;
+        }
+      };
+      res.once("finish", release);
+      // An aborted client may never emit finish; count until the handler ends its response.
+      const end = res.end;
+      res.end = function (...args: Parameters<Response["end"]>) {
+        release();
+        return end.apply(res, args);
+      } as Response["end"];
+    }
+    next();
+  });
   const attachments = new Attachments(db, storage, knowledge, () =>
     routing.models().some((m) => m.supports_images),
   );
   try {
     await history.prepare();
   } catch (error) {
+    await backups.close();
     await history.close();
     await knowledge.close();
     db.close();
@@ -1429,6 +1473,36 @@ export async function createApp(config: Config) {
     audit(res, "Updated user profile");
     res.json({ ok: true });
   });
+  app.get("/api/admin/backups", protect(true), (_req, res) =>
+    res.json(backups.report()),
+  );
+  app.post("/api/admin/backups", protect(true), (_req, res) => {
+    const id = backups.start();
+    audit(res, "Started data backup " + id);
+    res.status(202).json({ id });
+  });
+  app.put("/api/admin/backups/schedule", protect(true), (req, res) => {
+    const input = parse(
+      z
+        .object({
+          enabled: z.boolean(),
+          time: z.string().regex(/^(?:[01]\d|2[0-3]):[0-5]\d$/),
+        })
+        .strict(),
+      req,
+    );
+    backups.schedule(input.enabled, input.time);
+    audit(res, "Updated daily backup schedule");
+    res.json({ ok: true });
+  });
+  app.get("/api/admin/storage/catalogue", protect(true), (_req, res) =>
+    res.json(storage.catalogue()),
+  );
+  app.post("/api/admin/storage/metadata", protect(true), async (_req, res) => {
+    const result = await knowledge.lock.run(() => storage.refreshMetadata());
+    audit(res, "Refreshed stored file metadata");
+    res.json(result);
+  });
   app.get("/api/admin/storage", protect(true), (_req, res) =>
     res.json(storage.publicSettings()),
   );
@@ -1588,7 +1662,9 @@ export async function createApp(config: Config) {
     secrets,
     storage,
     attachments,
+    backups,
     close: async () => {
+      await backups.close();
       await history.close();
       await knowledge.close();
       db.close();

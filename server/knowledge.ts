@@ -542,7 +542,7 @@ export class Knowledge {
       const objectRef = uploaded
         ? await this.storage!.put(raw, mime, "knowledge")
         : undefined;
-      let id: number;
+      let id: number = 0;
       try {
         id = Number(
           this.db.run(
@@ -558,7 +558,9 @@ export class Knowledge {
             objectRef ? JSON.stringify(objectRef) : null,
           ).lastInsertRowid,
         );
+        if (objectRef) await this.storage!.writeMetadata("documents", id);
       } catch (error) {
+        if (id) this.db.run("DELETE FROM documents WHERE id=?", id);
         if (objectRef) await this.storage!.delete(objectRef);
         throw error;
       }
@@ -702,18 +704,16 @@ export class Knowledge {
       for (const sample of samples)
         if (!selected.some((row) => row.id === sample[n].id))
           selected.push(sample[n]);
-    return selected
-      .slice(0, 12)
-      .map((r) => ({
-        source_id: r.id,
-        document_id: r.doc_id,
-        title: r.title,
-        content: r.content,
-        page: r.page,
-        label: r.label,
-        filename: r.filename,
-        url: "/sources/" + r.id,
-      }));
+    return selected.slice(0, 12).map((r) => ({
+      source_id: r.id,
+      document_id: r.doc_id,
+      title: r.title,
+      content: r.content,
+      page: r.page,
+      label: r.label,
+      filename: r.filename,
+      url: "/sources/" + r.id,
+    }));
   }
   documents() {
     return this.db.all(

@@ -1,9 +1,15 @@
+import { createReadStream } from "node:fs";
+import { readFile, stat, open } from "node:fs/promises";
 import {
   S3Client,
   HeadBucketCommand,
   PutObjectCommand,
   GetObjectCommand,
   DeleteObjectCommand,
+  CreateMultipartUploadCommand,
+  UploadPartCommand,
+  CompleteMultipartUploadCommand,
+  AbortMultipartUploadCommand,
 } from "@aws-sdk/client-s3";
 import { createHash, randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -24,6 +30,7 @@ export interface ObjectRef {
   version_id?: string;
   sha256: string;
   size: number;
+  metadata_ref?: ObjectRef;
 }
 export interface ObjectClient {
   head(): Promise<void>;
@@ -32,6 +39,7 @@ export interface ObjectClient {
     body: Buffer,
     mime: string,
   ): Promise<{ version_id?: string }>;
+  putFile?(key: string, path: string): Promise<{ version_id?: string }>;
   get(key: string, version?: string): Promise<Buffer>;
   delete(key: string, version?: string): Promise<void>;
   close(): void;
@@ -121,6 +129,102 @@ export const s3Factory: ObjectFactory = (s) => {
         }),
       );
       return { version_id: result.VersionId };
+    },
+    putFile: async (key, path) => {
+      const info = await stat(path),
+        partSize = 32 * 1024 * 1024;
+      const sendBackup = (command: any) =>
+        client.send(command, {
+          abortSignal: AbortSignal.timeout(600000),
+        }) as Promise<any>;
+      if (info.size <= partSize) {
+        const body = createReadStream(path);
+        try {
+          const result = await sendBackup(
+            new PutObjectCommand({
+              Bucket: s.bucket,
+              Key: key,
+              Body: body,
+              ContentLength: info.size,
+              ContentType: "application/octet-stream",
+            }),
+          );
+          return { version_id: result.VersionId };
+        } finally {
+          body.destroy();
+        }
+      }
+      const created = await sendBackup(
+        new CreateMultipartUploadCommand({
+          Bucket: s.bucket,
+          Key: key,
+          ContentType: "application/octet-stream",
+        }),
+      );
+      const uploadId = created.UploadId;
+      if (!uploadId) throw new Error("Missing multipart upload ID");
+      let file: Awaited<ReturnType<typeof open>> | undefined;
+      try {
+        file = await open(path, "r");
+        const parts: { PartNumber: number; ETag: string }[] = [];
+        const buffer = Buffer.allocUnsafe(partSize);
+        for (let offset = 0; offset < info.size;) {
+          const length = Math.min(partSize, info.size - offset);
+          let read = 0;
+          while (read < length) {
+            const result = await file.read(
+              buffer,
+              read,
+              length - read,
+              offset + read,
+            );
+            if (!result.bytesRead) throw new Error("Backup file ended early");
+            read += result.bytesRead;
+          }
+          const number = parts.length + 1;
+          if (number > 10000)
+            throw new Error("Backup exceeds multipart limits");
+          const body = buffer.subarray(0, length);
+          const result = await sendBackup(
+            new UploadPartCommand({
+              Bucket: s.bucket,
+              Key: key,
+              UploadId: uploadId,
+              PartNumber: number,
+              Body: body,
+              ContentLength: length,
+              ContentMD5: createHash("md5").update(body).digest("base64"),
+            }),
+          );
+          if (!result.ETag) throw new Error("Missing multipart ETag");
+          parts.push({ PartNumber: number, ETag: result.ETag });
+          offset += length;
+        }
+        const result = await sendBackup(
+          new CompleteMultipartUploadCommand({
+            Bucket: s.bucket,
+            Key: key,
+            UploadId: uploadId,
+            MultipartUpload: { Parts: parts },
+          }),
+        );
+        return { version_id: result.VersionId };
+      } catch (error) {
+        try {
+          await sendBackup(
+            new AbortMultipartUploadCommand({
+              Bucket: s.bucket,
+              Key: key,
+              UploadId: uploadId,
+            }),
+          );
+        } catch {
+          /* Storage lifecycle rules should expire abandoned multipart uploads. */
+        }
+        throw error;
+      } finally {
+        await file?.close();
+      }
     },
     get: async (key, version) => {
       const result = await send(
@@ -356,6 +460,171 @@ export class ObjectStorage {
     return !!this.db.get("SELECT storage_enabled FROM settings WHERE id=1")!
       .storage_enabled;
   }
+  catalogue() {
+    const files = [];
+    for (const [table, kind] of [
+      ["attachments", "private"],
+      ["documents", "knowledge"],
+    ] as const) {
+      for (const row of this.db.all(
+        `SELECT ${table === "attachments" ? "id,user_id,filename,mime,created_at,object_ref" : "id,repo_id,title,filename,mime,object_ref"} FROM ${table} WHERE object_ref IS NOT NULL`,
+      )) {
+        const ref: ObjectRef = JSON.parse(row.object_ref),
+          store = this.db.get(
+            "SELECT endpoint,bucket FROM object_stores WHERE id=?",
+            ref.store_id,
+          )!;
+        const repository =
+          kind === "knowledge"
+            ? this.db.get("SELECT * FROM repositories WHERE id=?", row.repo_id)
+            : undefined;
+        files.push({
+          format: 1,
+          authorization:
+            "Authenticated access only. Labels are recovery hints, not permission grants; verify independently.",
+          workspace: this.namespace(),
+          record_type: table,
+          record_id: row.id,
+          filename: row.filename,
+          title: row.title ?? row.filename,
+          mime: row.mime,
+          created_at: row.created_at ?? null,
+          access:
+            kind === "private"
+              ? { scope: "private", owner_id: row.user_id }
+              : {
+                  scope: "repository",
+                  repository_id: row.repo_id,
+                  repository_name: repository?.name,
+                  groups: JSON.parse(repository?.groups_json ?? "[]"),
+                },
+          original: {
+            endpoint: store.endpoint,
+            bucket: store.bucket,
+            key: ref.key,
+            version_id: ref.version_id,
+            size: ref.size,
+            sha256: ref.sha256,
+          },
+          metadata: ref.metadata_ref
+            ? {
+                key: ref.metadata_ref.key,
+                version_id: ref.metadata_ref.version_id,
+              }
+            : null,
+        });
+      }
+    }
+    return {
+      format: 1,
+      exported_at: new Date().toISOString(),
+      warning:
+        "Access labels are recovery hints, not authorization grants. Re-establish permissions before reuse. No encryption keys or credentials are included.",
+      files,
+    };
+  }
+  async writeMetadata(
+    table: "attachments" | "documents",
+    id: string | number,
+    entry?: ReturnType<ObjectStorage["catalogue"]>["files"][number],
+  ) {
+    const item =
+      entry ??
+      this.catalogue().files.find(
+        (f) => f.record_type === table && f.record_id === id,
+      );
+    if (!item) throw new Failure(404, "Stored file not found.");
+    const row = this.db.get(`SELECT object_ref FROM ${table} WHERE id=?`, id)!;
+    const ref: ObjectRef = JSON.parse(row.object_ref),
+      client = this.factory(this.config(ref.store_id));
+    const bytes = Buffer.from(
+      JSON.stringify(
+        {
+          ...item,
+          metadata: undefined,
+          metadata_written_at: new Date().toISOString(),
+        },
+        null,
+        2,
+      ),
+    );
+    try {
+      const key = ref.key + ".metadata.json";
+      const result = await client.put(key, bytes, "application/json");
+      const old = ref.metadata_ref;
+      ref.metadata_ref = {
+        store_id: ref.store_id,
+        key,
+        version_id: result.version_id,
+        size: bytes.length,
+        sha256: createHash("sha256").update(bytes).digest("hex"),
+      };
+      try {
+        this.db.run(
+          `UPDATE ${table} SET object_ref=? WHERE id=?`,
+          JSON.stringify(ref),
+          id,
+        );
+      } catch (error) {
+        await client.delete(key, result.version_id).catch(() => {});
+        throw error;
+      }
+      if (old?.version_id && old.version_id !== result.version_id)
+        await client.delete(old.key, old.version_id).catch(() => {});
+    } finally {
+      client.close();
+    }
+  }
+  async refreshMetadata() {
+    let saved = 0,
+      failed = 0;
+    for (const file of this.catalogue().files) {
+      try {
+        await this.writeMetadata(file.record_type, file.record_id, file);
+        saved++;
+      } catch {
+        failed++;
+      }
+    }
+    return { saved, failed };
+  }
+  async putBackup(
+    path: string,
+    run: string,
+    filename: string,
+  ): Promise<ObjectRef> {
+    if (!this.enabled() || !this.active())
+      throw new Failure(
+        400,
+        "Configure object storage before creating a backup.",
+      );
+    const active = this.active()!,
+      settings = this.config(active.id);
+    const key = [settings.prefix, this.namespace(), "backups", run, filename]
+      .filter(Boolean)
+      .join("/");
+    const hash = createHash("sha256");
+    for await (const part of createReadStream(path)) hash.update(part);
+    const client = this.factory(settings);
+    try {
+      const result = client.putFile
+        ? await client.putFile(key, path)
+        : await client.put(
+            key,
+            await readFile(path),
+            "application/octet-stream",
+          );
+      return {
+        store_id: active.id,
+        key,
+        version_id: result.version_id,
+        sha256: hash.digest("hex"),
+        size: (await stat(path)).size,
+      };
+    } finally {
+      client.close();
+    }
+  }
   async put(
     raw: Buffer,
     mime: string,
@@ -413,6 +682,8 @@ export class ObjectStorage {
   async delete(ref: ObjectRef) {
     const client = this.factory(this.config(ref.store_id));
     try {
+      if (ref.metadata_ref)
+        await client.delete(ref.metadata_ref.key, ref.metadata_ref.version_id);
       await client.delete(ref.key, ref.version_id);
     } catch {
       throw new Failure(

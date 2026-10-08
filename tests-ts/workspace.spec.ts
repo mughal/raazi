@@ -1129,3 +1129,63 @@ test("administrators can inspect recorded usage and change its period", async ({
   await expect(page.getByRole("alert")).toHaveCount(0);
   await page.screenshot({ path: "data/react-admin-usage.png", fullPage: true });
 });
+
+test("reload preserves administration tab and manual backup enables scheduling after successful upload", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  await page
+    .getByRole("button", { name: "Administration", exact: true })
+    .last()
+    .click();
+  await page.getByRole("tab", { name: "Backups", exact: true }).click();
+  await expect(page.getByLabel("Enable daily backups")).toBeDisabled();
+  await page.reload();
+  await expect(
+    page.getByRole("tab", { name: "Backups", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByRole("heading", { name: "Data backups" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Back up now", exact: true }).click();
+  await expect(
+    page.getByText("Backup files saved to object storage.").first(),
+  ).toBeVisible();
+  await expect(page.getByLabel("Enable daily backups")).toBeEnabled();
+  await page.getByLabel("Enable daily backups").check();
+  await page.getByRole("button", { name: "Save backup schedule" }).click();
+  await expect(page.getByText(/Next backup:/)).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Enable daily backups")).toBeChecked();
+  await page.getByLabel("Enable daily backups").uncheck();
+  await page.getByRole("button", { name: "Save backup schedule" }).click();
+  await page
+    .getByRole("button", { name: "Write file metadata", exact: true })
+    .click();
+  await expect(page.getByRole("status")).toContainText(
+    "file metadata records written",
+  );
+  const downloadPromise = page.waitForEvent("download");
+  await page
+    .getByRole("button", { name: "Export file catalogue", exact: true })
+    .click();
+  expect((await downloadPromise).suggestedFilename()).toBe(
+    "raazi-file-catalogue.json",
+  );
+  await page.screenshot({
+    path: "data/react-admin-backups.png",
+    fullPage: true,
+  });
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  await page.getByLabel("Message Raazi").fill("Reload conversation check");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".message.user")).toContainText(
+    "Reload conversation check",
+  );
+  await expect(page.locator(".message.assistant")).toHaveCount(1);
+});

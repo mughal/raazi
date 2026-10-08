@@ -78,6 +78,7 @@ function SourceView({
 function App() {
   const [session, setSession] = useState<Session | null>(null),
     [workspace, setWorkspace] = useState<Workspace | null>(null),
+    [navigationReady, setNavigationReady] = useState(false),
     [view, setView] = useState("chat"),
     [cid, setCid] = useState<string | null>(null),
     [folder, setFolder] = useState<string | null>(null),
@@ -118,11 +119,40 @@ function App() {
     setWorkspace(await api<Workspace>("/api/workspace"));
   }
   async function loadSession() {
+    setNavigationReady(false);
     const s = await api<Session>("/api/session");
     setCSRF(s.csrf);
     setSession(s);
-    if (s.user) await refresh();
-    else {
+    if (s.user) {
+      await refresh();
+      const saved = sessionStorage.getItem("raazi-page:" + s.user.id);
+      if (saved)
+        try {
+          const state = JSON.parse(saved);
+          if (
+            ["chat", "admin", "knowledge", "profile"].includes(state.view) &&
+            (state.view !== "admin" || s.user.role === "admin")
+          )
+            setView(state.view);
+          if (state.cid && state.view === "chat") {
+            try {
+              setMessages(
+                await api<Message[]>(
+                  "/api/conversations/" + encodeURIComponent(state.cid),
+                ),
+              );
+              setCid(state.cid);
+            } catch {
+              setCid(null);
+              setMessages([]);
+            }
+          }
+        } catch {
+          /* Ignore invalid browser state. */
+        }
+    } else {
+      if (session?.user)
+        sessionStorage.removeItem("raazi-page:" + session.user.id);
       setWorkspace(null);
       setMessages([]);
       setCid(null);
@@ -130,7 +160,15 @@ function App() {
       setDraftFiles({});
       setView("chat");
     }
+    setNavigationReady(true);
   }
+  useEffect(() => {
+    if (navigationReady && session?.user && workspace)
+      sessionStorage.setItem(
+        "raazi-page:" + session.user.id,
+        JSON.stringify({ view, cid }),
+      );
+  }, [view, cid, session?.user?.id, workspace, navigationReady]);
   useEffect(() => {
     if (!session?.user) return;
     const check = () => {

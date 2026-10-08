@@ -104,7 +104,7 @@ it("requires S3, rejects unknown formats, and keeps unreadable originals with a 
       result.body.id,
     ),
   ).toEqual(original);
-  expect(store.objects.size).toBe(1);
+  expect(store.objects.size).toBe(2);
 });
 it("indexes private PDFs and DOCX, serves original bytes, enforces ownership, and keeps page citations", async () => {
   await service.storage.save(storageInput);
