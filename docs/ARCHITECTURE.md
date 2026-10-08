@@ -219,3 +219,5 @@ Backups pause new application changes and wait for active requests and knowledge
 
 
 Portable object metadata: new private and knowledge uploads write `<key>.metadata.json` with original filename/title, MIME, workspace, object version/size/SHA-256 and private owner or repository/group labels. Companion references are kept in SQLite and deleted with originals. Administration > Backups can refresh metadata for existing objects and export a credential-free file catalogue. New backup sets include file-catalogue.json. Permissions are snapshot recovery hints, not authorization grants. Keep metadata private and confirm target permissions independently. See [RECOVERY.md](RECOVERY.md) for full restore and file-only rebuild limits.
+
+Backup presentation: summary cards show last success, retained completed sets and daily schedule. Separate panels contain schedule and catalogue controls. History is collapsed by default; open a row for object paths, sizes and SHA-256. Status remains explicit and errors appear in details. All timestamps use Asia/Karachi. Backup behavior is unchanged.

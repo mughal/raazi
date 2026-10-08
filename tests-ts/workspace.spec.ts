@@ -1151,9 +1151,13 @@ test("reload preserves administration tab and manual backup enables scheduling a
     page.getByRole("heading", { name: "Data backups" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Back up now", exact: true }).click();
+  await expect(page.locator(".backup-state-complete").first()).toBeVisible();
+  await expect(page.locator(".backup-file").first()).not.toBeVisible();
+  await page.locator(".backup-run > summary").first().click();
   await expect(
     page.getByText("Backup files saved to object storage.").first(),
   ).toBeVisible();
+  await expect(page.locator(".backup-file").first()).toBeVisible();
   await expect(page.getByLabel("Enable daily backups")).toBeEnabled();
   await page.getByLabel("Enable daily backups").check();
   await page.getByRole("button", { name: "Save backup schedule" }).click();
@@ -1179,6 +1183,27 @@ test("reload preserves administration tab and manual backup enables scheduling a
     path: "data/react-admin-backups.png",
     fullPage: true,
   });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect
+    .poll(() =>
+      page
+        .locator(".sidebar")
+        .evaluate((element) => element.getBoundingClientRect().right),
+    )
+    .toBeLessThanOrEqual(0);
+  await expect(
+    page.getByRole("button", { name: "Back up now", exact: true }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth <= window.innerWidth,
+    ),
+  ).toBe(true);
+  await page.screenshot({
+    path: "data/react-admin-backups-mobile.png",
+    fullPage: true,
+  });
+  await page.setViewportSize({ width: 1280, height: 720 });
   await page.getByRole("button", { name: "New chat", exact: true }).click();
   await page.getByLabel("Message Raazi").fill("Reload conversation check");
   await page.getByRole("button", { name: "Send message" }).click();
