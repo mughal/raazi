@@ -1,3 +1,4 @@
+import { KnowledgeLibrary } from "./KnowledgeLibrary";
 import { StrictMode, useEffect, useRef, useState, FormEvent } from "react";
 import { PortalLogin } from "./PortalLogin";
 import { createRoot } from "react-dom/client";
@@ -845,43 +846,19 @@ function App() {
         )}
         {view === "knowledge" && (
           <div className="page">
-            <div className="eyebrow">YOUR ORGANIZATION'S KNOWLEDGE</div>
-            <h1>Knowledge library</h1>
-            <p className="page-subtitle">
-              Choose a repository in chat to focus your questions. Answers link
-              to supporting passages.
-            </p>
-            <div className="grid">
-              {workspace.repositories.map((r) => (
-                <section key={r.id} className="card">
-                  <Icon name="book" />
-                  <h2>{r.name}</h2>
-                  <p>{r.description || "Enterprise knowledge repository"}</p>
-                  <button
-                    onClick={() => {
-                      setRepository(String(r.id));
-                      newChat();
-                    }}
-                  >
-                    Chat with this repository
-                  </button>
-                </section>
-              ))}
-            </div>
+            <KnowledgeLibrary
+              userId={session.user.id}
+              onChat={(id) => {
+                setRepository(String(id));
+                newChat();
+              }}
+            />
             <YourFiles
               onUse={(file) => {
                 setDraftFiles((d) => ({ ...d, ["new:"]: [file] }));
                 newChat();
               }}
             />
-            {!workspace.repositories.length && (
-              <section className="card">
-                <h3>Your library is waiting</h3>
-                <p>
-                  An administrator can add repositories and upload documents.
-                </p>
-              </section>
-            )}
           </div>
         )}
         {view === "profile" && (

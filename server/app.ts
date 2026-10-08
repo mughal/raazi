@@ -594,6 +594,55 @@ export async function createApp(config: Config) {
       );
     }
   });
+  const libraryRepository = (repo: Row) => {
+    const counts = db.get(
+      "SELECT COUNT(*) AS documents,COALESCE(SUM(CASE WHEN status='ready' THEN 1 ELSE 0 END),0) AS ready,COALESCE(SUM(CASE WHEN status NOT IN ('ready','processing') THEN 1 ELSE 0 END),0) AS issues FROM documents WHERE repo_id=?",
+      repo.id,
+    )!;
+    return {
+      id: repo.id,
+      name: repo.name,
+      description: repo.description,
+      documents: counts.documents,
+      ready: counts.ready,
+      issues: counts.issues,
+    };
+  };
+  app.get("/api/library", protect(), (_req, res) =>
+    res.json(allowed(res.locals.user).map(libraryRepository)),
+  );
+  app.get("/api/library/:id", protect(), (req, res) => {
+    const repo = allowed(res.locals.user).find((r) => r.id === rid(req));
+    if (!repo)
+      throw new Failure(404, "Knowledge base not found or unavailable.");
+    const query = z
+      .object({
+        page: z.coerce.number().int().min(1).max(100000).default(1),
+        search: z.string().trim().max(200).default(""),
+      })
+      .parse(req.query);
+    const pattern = "%" + query.search.replace(/[\\%_]/g, "\\$&") + "%";
+    const matching = db.get(
+      "SELECT COUNT(*) AS count FROM documents WHERE repo_id=? AND (title LIKE ? ESCAPE '\\' OR filename LIKE ? ESCAPE '\\')",
+      repo.id,
+      pattern,
+      pattern,
+    )!.count;
+    const documents = db.all(
+      "SELECT id,title,filename,mime,status,index_completed,index_total,CASE WHEN warning<>'' THEN 1 ELSE 0 END AS extraction_warning,length(content) AS characters,substr(content,1,600) AS preview,(SELECT COUNT(*) FROM passages WHERE doc_id=documents.id) AS sections FROM documents WHERE repo_id=? AND (title LIKE ? ESCAPE '\\' OR filename LIKE ? ESCAPE '\\') ORDER BY title,id LIMIT 50 OFFSET ?",
+      repo.id,
+      pattern,
+      pattern,
+      (query.page - 1) * 50,
+    );
+    res.json({
+      repository: libraryRepository(repo),
+      documents,
+      page: query.page,
+      pages: Math.max(1, Math.ceil(matching / 50)),
+      matching,
+    });
+  });
   app.get("/api/workspace", protect(), async (_req, res) =>
     res.json({
       model: knowledge.settings().model,

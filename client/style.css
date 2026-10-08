@@ -2417,3 +2417,33 @@ label > select {
     flex-wrap: wrap;
   }
 }
+
+.library-repository p {
+  color: var(--muted);
+  line-height: 1.7;
+}
+.library-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.library-detail {
+  display: grid;
+  gap: 18px;
+  margin-top: 20px;
+}
+.library-preview {
+  padding: 20px;
+  line-height: 1.7;
+}
+.library-preview small {
+  color: var(--muted);
+}
+.library-document summary > svg:first-child {
+  color: var(--green);
+  flex-shrink: 0;
+}
+.library-document[open] summary > svg:first-child {
+  transform: none;
+}

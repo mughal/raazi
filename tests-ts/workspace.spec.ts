@@ -1214,3 +1214,67 @@ test("reload preserves administration tab and manual backup enables scheduling a
   );
   await expect(page.locator(".message.assistant")).toHaveCount(1);
 });
+
+test("users can open a knowledge base, inspect documents and search its library", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const session = await (await page.request.get("/api/session")).json();
+  const headers = { "X-CSRF-Token": session.csrf };
+  const repository = await (
+    await page.request.post("/api/admin/repositories", {
+      headers,
+      data: {
+        name: "Department Manuals",
+        description: "Approved department procedures and guidance.",
+        groups: [],
+      },
+    })
+  ).json();
+  await page.request.post("/api/admin/documents", {
+    headers,
+    data: {
+      repository_id: repository.id,
+      title: "Employee leave guide",
+      content: "Annual leave allowance is 25 days.",
+    },
+  });
+  await page
+    .getByRole("button", { name: "Knowledge library", exact: true })
+    .last()
+    .click();
+  const card = page.locator(".library-repository").filter({
+    has: page.getByRole("heading", {
+      name: "Department Manuals",
+      exact: true,
+    }),
+  });
+  await expect(card).toContainText("1 document");
+  await card.getByRole("button", { name: "View documents" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Department Manuals", exact: true }),
+  ).toBeVisible();
+  await page.locator(".library-document summary").first().click();
+  await expect(page.locator(".library-preview")).toContainText(
+    "Annual leave allowance is 25 days.",
+  );
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Department Manuals", exact: true }),
+  ).toBeVisible();
+  await page.getByLabel("Find a document").fill("unmatched-document");
+  await expect(page.getByText("No documents match your search.")).toBeVisible();
+  await page.getByLabel("Find a document").fill("");
+  await expect(page.locator(".library-document")).toHaveCount(1);
+  await page.screenshot({
+    path: "data/react-knowledge-library.png",
+    fullPage: true,
+  });
+  await page
+    .getByRole("button", { name: "Chat with this repository", exact: true })
+    .click();
+  await expect(page.getByLabel("Message Raazi")).toBeVisible();
+});

@@ -2191,3 +2191,60 @@ it("restricts manual backups and schedule changes to administrators", async () =
     "complete",
   );
 });
+
+it("lets permitted users browse knowledge documents while hiding other repositories and storage details", async () => {
+  const permitted = await repo(["finance"]),
+    denied = await repo(["hr"]);
+  const doc = await addDoc(permitted);
+  await addDoc(denied);
+  service.db.run(
+    "UPDATE documents SET title=?,error=?,object_ref=? WHERE id=?",
+    "Leave 100% policy",
+    "secret-upstream-error",
+    '{"key":"private-bucket-key"}',
+    doc,
+  );
+  const employee = await user("library-user", ["finance"]);
+  const get = (path: string) =>
+    request(service.app).get(path).set("Cookie", employee.cookie);
+  const list = await get("/api/library");
+  expect(list.status).toBe(200);
+  expect(list.body.map((r: any) => r.id)).toEqual([permitted]);
+  expect((await get("/api/library/" + denied)).status).toBe(404);
+  const detail = await get("/api/library/" + permitted + "?search=100%25");
+  expect(detail.status).toBe(200);
+  expect(detail.body.matching).toBe(1);
+  expect(detail.body.documents[0]).toMatchObject({
+    title: "Leave 100% policy",
+    status: "ready",
+    preview: "Annual leave allowance is 25 days.",
+  });
+  expect(JSON.stringify(detail.body)).not.toContain("secret-upstream-error");
+  expect(JSON.stringify(detail.body)).not.toContain("private-bucket-key");
+  expect((await request(service.app).get("/api/library")).status).toBe(401);
+  service.db.run(
+    "UPDATE repositories SET groups_json=? WHERE id=?",
+    '["hr"]',
+    permitted,
+  );
+  expect((await get("/api/library/" + permitted)).status).toBe(404);
+});
+it("paginates library documents and reports stale readiness", async () => {
+  const id = await repo();
+  for (let n = 0; n < 51; n++)
+    service.db.run(
+      "INSERT INTO documents(repo_id,title,content,status) VALUES(?,?,?,?)",
+      id,
+      "Manual " + n,
+      "x".repeat(900),
+      n === 0 ? "needs_reindex" : "ready",
+    );
+  const first = (await admin.get("/api/library/" + id)).body;
+  expect(first.repository).toMatchObject({ documents: 51, ready: 50 });
+  expect(first.documents).toHaveLength(50);
+  expect(first.documents[0].preview).toHaveLength(600);
+  expect(first.pages).toBe(2);
+  expect(
+    (await admin.get("/api/library/" + id + "?page=2")).body.documents,
+  ).toHaveLength(1);
+});
