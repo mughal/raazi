@@ -682,10 +682,25 @@ export async function createApp(config: Config) {
     res.json({ ok: true });
   });
   app.post("/api/chat-groups", protect(), async (req, res) => {
-    const { name } = parse(z.object({ name: text(100, true) }), req);
-    res
-      .status(201)
-      .json({ id: await history.createGroup(res.locals.user.id, name) });
+    const { name, repository_id } = parse(
+      z.object({
+        name: text(100, true),
+        repository_id: z.number().int().positive().nullable().optional(),
+      }),
+      req,
+    );
+    if (
+      repository_id != null &&
+      !allowed(res.locals.user).some((r) => r.id === repository_id)
+    )
+      throw new Failure(404, "Knowledge base not found.");
+    res.status(201).json({
+      id: await history.createGroup(
+        res.locals.user.id,
+        name,
+        repository_id ?? null,
+      ),
+    });
   });
   app.patch("/api/chat-groups/:id", protect(), async (req, res) => {
     const data = parse(
@@ -801,6 +816,10 @@ export async function createApp(config: Config) {
       ].slice(0, 5);
       const activeFiles = attachments.selected(user.id, activeIds, false);
       let repos: number[] = [];
+      if (data.conversation_id) {
+        const saved = await history.owned(user.id, data.conversation_id);
+        data.repository_id = saved.repository_id ?? null;
+      }
       if (data.repository_id != null) {
         if (!allowed(user).some((r) => r.id === data.repository_id))
           throw new Failure(403, "Repository access denied.");
@@ -824,6 +843,8 @@ export async function createApp(config: Config) {
           data.group_id ?? null,
           files,
           revision,
+          "",
+          data.repository_id ?? null,
         );
         res.json({ conversation_id, content, sources: [], attachments: files });
       };
@@ -861,6 +882,8 @@ export async function createApp(config: Config) {
           data.group_id ?? null,
           files,
           revision,
+          "",
+          data.repository_id ?? null,
         );
         res.json({
           conversation_id,
@@ -927,6 +950,8 @@ export async function createApp(config: Config) {
             data.group_id ?? null,
             files,
             revision,
+            "",
+            data.repository_id ?? null,
           );
           res.json({
             conversation_id,
@@ -1087,6 +1112,7 @@ export async function createApp(config: Config) {
         files,
         revision,
         reasoning,
+        data.repository_id ?? null,
       );
       res.json({
         conversation_id,

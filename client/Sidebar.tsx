@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Workspace, Chat, Group, User } from "../shared/types";
 import { Icon } from "./ui";
 type Props = {
@@ -8,21 +8,67 @@ type Props = {
   view: string;
   active: string | null;
   folder: string | null;
+  repository: string;
   busy: boolean;
   collapsed: boolean;
   mobile: boolean;
   toggle: () => void;
   closeMobile: () => void;
-  newChat: (group?: string) => void;
+  newChat: (group?: string, repository?: number | null) => void;
   openChat: (chat: Chat) => void;
   openView: (view: string) => void;
   editChat: (chat: Chat) => void;
-  editGroup: (group: Group | null) => void;
+  editGroup: (group: Group | null, repository?: number | null) => void;
   collapseGroup: (group: Group) => void;
   logout: () => void;
 };
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
+  const [closed, setClosed] = useState<Record<string, boolean>>(() => {
+    try {
+      return {
+        ...Object.fromEntries(
+          p.workspace.repositories.map((r) => ["repo:" + r.id, true]),
+        ),
+        ...JSON.parse(
+          sessionStorage.getItem("raazi-sidebar:" + p.user.id) ?? "{}",
+        ),
+      };
+    } catch {
+      return {};
+    }
+  });
+  useEffect(() => {
+    sessionStorage.setItem(
+      "raazi-sidebar:" + p.user.id,
+      JSON.stringify(closed),
+    );
+  }, [closed, p.user.id]);
+  useEffect(() => {
+    if (p.repository)
+      setClosed((s) => ({
+        ...s,
+        library: false,
+        ["repo:" + p.repository]: false,
+      }));
+  }, [p.repository]);
+  const disclosure = (key: string, label: string, icon: string) => (
+    <button
+      className="section-toggle"
+      aria-expanded={!!query || !closed[key]}
+      onClick={() => setClosed((s) => ({ ...s, [key]: !s[key] }))}
+    >
+      <Icon name={icon} />
+      <span>{label}</span>
+      <span
+        className={
+          "folder-chevron" + (query || !closed[key] ? " expanded" : "")
+        }
+      >
+        <Icon name="chevron" />
+      </span>
+    </button>
+  );
   const w = p.workspace,
     visible = (c: Chat) => c.title.toLowerCase().includes(query.toLowerCase());
   const row = (c: Chat, nested = false) => (
@@ -53,22 +99,98 @@ export function Sidebar(p: Props) {
       </button>
     </div>
   );
-  const dated = (c: Chat) => {
-    const days =
-      (new Date().setHours(0, 0, 0, 0) -
-        new Date(c.updated_at).setHours(0, 0, 0, 0)) /
-      86400000;
-    return days < 1
-      ? "Today"
-      : days < 2
-        ? "Yesterday"
-        : days < 7
-          ? "Previous 7 days"
-          : "Older chats";
+  const pathSection = (repo: number | null, label: string) => {
+    const key = repo === null ? "general" : "repo:" + repo;
+    const chats = w.conversations.filter(
+      (c) => (c.repository_id ?? null) === repo && visible(c),
+    );
+    return (
+      <section className="history-section path-section" key={key}>
+        {disclosure(key, label, repo === null ? "chat" : "folder")}
+        {(query || !closed[key]) && (
+          <div className="path-children">
+            <div className="path-actions">
+              <button
+                className="text-button"
+                disabled={p.busy}
+                onClick={() => p.newChat(undefined, repo)}
+              >
+                <Icon name="plus" />
+                {repo === null ? "New general chat" : "New chat in " + label}
+              </button>
+              <button
+                className="icon-button"
+                aria-label={
+                  repo === null ? "Create folder" : "Create folder in " + label
+                }
+                disabled={p.busy}
+                onClick={() => p.editGroup(null, repo)}
+              >
+                <Icon name="folder" />
+              </button>
+            </div>
+            {w.groups
+              .filter((g) => (g.repository_id ?? null) === repo)
+              .map((g) => {
+                const chats = w.conversations.filter(
+                  (c) => c.group_id === g.id && visible(c),
+                );
+                return (
+                  <div key={g.id}>
+                    <div
+                      className={
+                        "folder-row" +
+                        (p.folder === g.id ? " current-folder" : "")
+                      }
+                    >
+                      <button
+                        className="folder-toggle"
+                        aria-expanded={!!query || !g.collapsed}
+                        onClick={() => p.collapseGroup(g)}
+                      >
+                        <span
+                          className={
+                            "folder-chevron" + (!g.collapsed ? " expanded" : "")
+                          }
+                        >
+                          <Icon name="chevron" />
+                        </span>
+                        <Icon name="folder" />
+                        <span>{g.name}</span>
+                        <small>{chats.length}</small>
+                      </button>
+                      <button
+                        className="row-menu"
+                        aria-label={"Manage folder " + g.name}
+                        onClick={() => p.editGroup(g)}
+                      >
+                        <Icon name="more" />
+                      </button>
+                    </div>
+                    {(!g.collapsed || query) && (
+                      <div className="folder-children">
+                        {chats.map((c) => row(c, true))}
+                        <button
+                          className="text-button"
+                          onClick={() => p.newChat(g.id, repo)}
+                          disabled={p.busy}
+                        >
+                          <Icon name="plus" />
+                          New chat in folder
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
+            {chats.filter((c) => !c.group_id).map((c) => row(c, true))}
+            {!chats.length && <p className="sidebar-hint">No chats yet.</p>}
+          </div>
+        )}
+      </section>
+    );
   };
-  const ungrouped = w.conversations.filter(
-    (c) => !c.group_id && !c.pinned && visible(c),
-  );
   return (
     <>
       <nav className="rail" aria-label="Quick navigation">
@@ -165,13 +287,6 @@ export function Sidebar(p: Props) {
           />
         </div>
         <div className="nav">
-          <button
-            className={p.view === "knowledge" ? "active" : ""}
-            onClick={() => p.openView("knowledge")}
-          >
-            <Icon name="book" />
-            Knowledge library
-          </button>
           {p.user.role === "admin" && (
             <button
               className={p.view === "admin" ? "active" : ""}
@@ -183,95 +298,49 @@ export function Sidebar(p: Props) {
           )}
         </div>
         <div className="sidebar-scroll">
+          {w.conversations.some((c) => c.pinned && visible(c)) && (
+            <section className="history-section">
+              {disclosure("pinned", "Pinned", "pin")}
+              {(query || !closed.pinned) &&
+                w.conversations
+                  .filter((c) => c.pinned && visible(c))
+                  .map((c) => row(c))}
+            </section>
+          )}
           <section className="history-section">
-            <div className="section-label">Pinned</div>
-            {w.conversations
-              .filter((c) => c.pinned && visible(c))
-              .map((c) => row(c))}
-            {!w.conversations.some((c) => c.pinned) && (
-              <p className="sidebar-hint">
-                Keep important conversations close.
-              </p>
+            {disclosure("library", "Knowledge library", "book")}
+            {(query || !closed.library) && (
+              <div className="library-children">
+                <button
+                  className="text-button"
+                  onClick={() => p.openView("knowledge")}
+                >
+                  Browse documents
+                </button>
+                {w.repositories.map((r) => pathSection(r.id, r.name))}
+                {!w.repositories.length && (
+                  <p className="sidebar-hint">No knowledge bases available.</p>
+                )}
+              </div>
             )}
           </section>
-          <section className="history-section">
-            <div className="section-heading">
-              <span className="section-label">Folders</span>
-              <button
-                className="icon-button"
-                aria-label="Create folder"
-                onClick={() => p.editGroup(null)}
-                disabled={p.busy}
-              >
-                <Icon name="plus" />
-              </button>
-            </div>
-            {w.groups.map((g) => {
-              const chats = w.conversations.filter(
-                (c) => c.group_id === g.id && visible(c),
-              );
-              return (
-                <div key={g.id}>
-                  <div
-                    className={
-                      "folder-row" +
-                      (p.folder === g.id ? " current-folder" : "")
-                    }
-                  >
-                    <button
-                      className="folder-toggle"
-                      aria-expanded={!!query || !g.collapsed}
-                      onClick={() => p.collapseGroup(g)}
-                    >
-                      <span
-                        className={
-                          "folder-chevron" + (!g.collapsed ? " expanded" : "")
-                        }
-                      >
-                        <Icon name="chevron" />
-                      </span>
-                      <Icon name="folder" />
-                      <span>{g.name}</span>
-                      <small>{chats.length}</small>
-                    </button>
-                    <button
-                      className="row-menu"
-                      aria-label={"Manage folder " + g.name}
-                      onClick={() => p.editGroup(g)}
-                    >
-                      <Icon name="more" />
-                    </button>
-                  </div>
-                  {(!g.collapsed || query) && (
-                    <div className="folder-children">
-                      {chats.map((c) => row(c, true))}
-                      <button
-                        className="text-button"
-                        onClick={() => p.newChat(g.id)}
-                        disabled={p.busy}
-                      >
-                        <Icon name="plus" />
-                        New chat in folder
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            {!w.groups.length && (
-              <p className="sidebar-hint">Organize chats into folders.</p>
-            )}
-          </section>
-          {["Today", "Yesterday", "Previous 7 days", "Older chats"].map(
-            (label) => {
-              const chats = ungrouped.filter((c) => dated(c) === label);
-              return chats.length ? (
-                <section className="history-section" key={label}>
-                  <div className="section-label">{label}</div>
-                  {chats.map((c) => row(c))}
-                </section>
-              ) : null;
-            },
+          {pathSection(null, "General chats")}
+          {w.conversations.some(
+            (c) =>
+              c.repository_id != null &&
+              !w.repositories.some((r) => r.id === c.repository_id),
+          ) && (
+            <section className="history-section">
+              <div className="section-label">Unavailable knowledge bases</div>
+              {w.conversations
+                .filter(
+                  (c) =>
+                    c.repository_id != null &&
+                    !w.repositories.some((r) => r.id === c.repository_id) &&
+                    visible(c),
+                )
+                .map((c) => row(c))}
+            </section>
           )}
           {query && !w.conversations.some(visible) && (
             <p className="sidebar-hint">No matching chats.</p>

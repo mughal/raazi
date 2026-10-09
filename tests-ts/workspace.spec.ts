@@ -1243,7 +1243,7 @@ test("users can open a knowledge base, inspect documents and search its library"
     },
   });
   await page
-    .getByRole("button", { name: "Knowledge library", exact: true })
+    .getByRole("button", { name: "Browse documents", exact: true })
     .last()
     .click();
   const card = page.locator(".library-repository").filter({
@@ -1277,4 +1277,96 @@ test("users can open a knowledge base, inspect documents and search its library"
     .getByRole("button", { name: "Chat with this repository", exact: true })
     .click();
   await expect(page.getByLabel("Message Raazi")).toBeVisible();
+});
+
+test("sidebar disclosures keep knowledge chats and custom folders under their path", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const session = await (await page.request.get("/api/session")).json();
+  const headers = { "X-CSRF-Token": session.csrf };
+  const repository = await (
+    await page.request.post("/api/admin/repositories", {
+      headers,
+      data: { name: "Sidebar Manuals", groups: [] },
+    })
+  ).json();
+  await page.reload();
+  const library = page.getByRole("button", {
+    name: "Knowledge library",
+    exact: true,
+  });
+  await library.click();
+  await expect(
+    page.getByRole("button", { name: "Sidebar Manuals", exact: true }),
+  ).toBeHidden();
+  await library.click();
+  const section = page.locator(".path-section").filter({
+    has: page.getByRole("button", { name: "Sidebar Manuals", exact: true }),
+  });
+  await section
+    .getByRole("button", { name: "Sidebar Manuals", exact: true })
+    .click();
+  await section
+    .getByRole("button", { name: "New chat in Sidebar Manuals", exact: true })
+    .click();
+  await expect(page.getByLabel("Knowledge repository")).toHaveValue(
+    String(repository.id),
+  );
+  await page.getByLabel("Message Raazi").fill("Sidebar knowledge question");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    section.getByRole("button", {
+      name: "Sidebar knowledge question",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await section
+    .getByRole("button", { name: "Create folder in Sidebar Manuals" })
+    .click();
+  await page.getByLabel("Folder name").fill("My manual questions");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await section
+    .getByRole("button", { name: "Manage chat Sidebar knowledge question" })
+    .click();
+  await page
+    .getByLabel("Chat folder")
+    .selectOption({ label: "My manual questions" });
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    section
+      .locator(".folder-children")
+      .getByRole("button", { name: "Sidebar knowledge question", exact: true }),
+  ).toBeVisible();
+  await page.reload();
+  await expect(page.getByLabel("Knowledge repository")).toHaveValue(
+    String(repository.id),
+  );
+  await section
+    .getByRole("button", { name: "Sidebar Manuals", exact: true })
+    .click();
+  await expect(section.locator(".folder-children")).toBeHidden();
+  await page.getByLabel("Search chats").fill("Sidebar knowledge question");
+  await expect(
+    section.getByRole("button", {
+      name: "Sidebar knowledge question",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page.getByLabel("Search chats").fill("");
+  await section
+    .getByRole("button", { name: "Sidebar Manuals", exact: true })
+    .click();
+  await page.screenshot({
+    path: "data/react-sidebar-paths.png",
+    fullPage: true,
+  });
+  const general = page.locator(".path-section").filter({
+    has: page.getByRole("button", { name: "General chats", exact: true }),
+  });
+  await general.getByRole("button", { name: "New general chat" }).click();
+  await expect(page.getByLabel("Knowledge repository")).toHaveValue("");
 });

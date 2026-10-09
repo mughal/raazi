@@ -91,6 +91,10 @@ export class History {
       await client!.query(
         "ALTER TABLE raazi_chat_messages ADD COLUMN IF NOT EXISTS reasoning TEXT NOT NULL DEFAULT ''",
       );
+      for (const table of ["groups", "conversations"] as const)
+        await client!.query(
+          `ALTER TABLE ${this.table(table)} ADD COLUMN IF NOT EXISTS repository_id INTEGER`,
+        );
       if (
         (
           await this.query(
@@ -104,12 +108,20 @@ export class History {
       for (const table of ["groups", "conversations"] as const) {
         const keys =
           table === "groups"
-            ? ["id", "user_id", "name", "collapsed", "created_at"]
+            ? [
+                "id",
+                "user_id",
+                "name",
+                "collapsed",
+                "created_at",
+                "repository_id",
+              ]
             : [
                 "id",
                 "user_id",
                 "title",
                 "group_id",
+                "repository_id",
                 "pinned",
                 "created_at",
                 "updated_at",
@@ -194,10 +206,14 @@ export class History {
     );
     return limit ? messages.reverse() : messages;
   }
-  async createGroup(uid: string, name: string) {
+  async createGroup(
+    uid: string,
+    name: string,
+    repository: number | null = null,
+  ) {
     const id = randomBytes(18).toString("base64url");
-    const keys = ["id", "user_id", "name", "created_at"],
-      values = [id, uid, name, new Date().toISOString()];
+    const keys = ["id", "user_id", "name", "created_at", "repository_id"],
+      values: any[] = [id, uid, name, new Date().toISOString(), repository];
     if (this.pool) {
       keys.unshift("namespace");
       values.unshift(this.namespace);
@@ -210,8 +226,15 @@ export class History {
   }
   async update(uid: string, id: string, data: Row, group = false) {
     await this.tx(async (c) => {
-      if (!group && data.group_id)
-        await this.owned(uid, data.group_id, true, c, true);
+      if (!group && data.group_id) {
+        const target = await this.owned(uid, data.group_id, true, c, true);
+        const chat = await this.owned(uid, id, false, c, true);
+        if (target.repository_id !== chat.repository_id)
+          throw new Failure(
+            400,
+            "Choose a folder in this chat's knowledge base or General chats.",
+          );
+      }
       await this.owned(uid, id, group, c, true);
       const s = this.scope(uid);
       await this.query(
@@ -252,6 +275,7 @@ export class History {
     attachments: unknown[] = [],
     revision?: { messageId: string; tailId: string; version: number },
     reasoning = "",
+    repository: number | null = null,
   ) {
     return this.tx(async (c) => {
       const now = new Date().toISOString();
@@ -307,17 +331,33 @@ export class History {
           );
         }
       } else {
-        if (group) await this.owned(uid, group, true, c, true);
+        if (group) {
+          const target = await this.owned(uid, group, true, c, true);
+          if (target.repository_id !== repository)
+            throw new Failure(
+              400,
+              "The folder belongs to a different chat section.",
+            );
+        }
         id = randomBytes(18).toString("base64url");
         const keys = [
           "id",
           "user_id",
           "title",
           "group_id",
+          "repository_id",
           "created_at",
           "updated_at",
         ];
-        const values: any[] = [id, uid, prompt.slice(0, 70), group, now, now];
+        const values: any[] = [
+          id,
+          uid,
+          prompt.slice(0, 70),
+          group,
+          repository,
+          now,
+          now,
+        ];
         if (this.pool) {
           keys.unshift("namespace");
           values.unshift(this.namespace);

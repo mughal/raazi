@@ -20,7 +20,8 @@ import { Admin } from "./Admin";
 import { Modal, Field, Icon } from "./ui";
 import "./style.css";
 type Editor =
-  { kind: "chat"; chat: Chat } | { kind: "group"; group: Group | null };
+  | { kind: "chat"; chat: Chat }
+  | { kind: "group"; group: Group | null; repository?: number | null };
 function SourceView({
   id,
   platformName,
@@ -106,7 +107,7 @@ function App() {
     fileInput = useRef<HTMLInputElement>(null),
     loadSequence = useRef(0),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
-    draftKey = cid ?? "new:" + (folder ?? ""),
+    draftKey = cid ?? "new:" + repository + ":" + (folder ?? ""),
     draft = drafts[draftKey] ?? "",
     files = draftFiles[draftKey] ?? [];
   const setDraft = (value: string) =>
@@ -117,7 +118,9 @@ function App() {
     toastTimer.current = setTimeout(() => setToast(""), 4000);
   };
   async function refresh() {
-    setWorkspace(await api<Workspace>("/api/workspace"));
+    const next = await api<Workspace>("/api/workspace");
+    setWorkspace(next);
+    return next;
   }
   async function loadSession() {
     setNavigationReady(false);
@@ -125,7 +128,7 @@ function App() {
     setCSRF(s.csrf);
     setSession(s);
     if (s.user) {
-      await refresh();
+      const loaded = await refresh();
       const saved = sessionStorage.getItem("raazi-page:" + s.user.id);
       if (saved)
         try {
@@ -143,6 +146,11 @@ function App() {
                 ),
               );
               setCid(state.cid);
+              const chat = loaded.conversations.find((c) => c.id === state.cid);
+              setFolder(chat?.group_id ?? null);
+              setRepository(
+                chat?.repository_id ? String(chat.repository_id) : "",
+              );
             } catch {
               setCid(null);
               setMessages([]);
@@ -236,11 +244,12 @@ function App() {
     setView(name);
     setMobile(false);
   };
-  const newChat = (group?: string) => {
+  const newChat = (group?: string, repo: number | null = null) => {
     if (busy) return;
     loadSequence.current++;
     setCid(null);
     setFolder(group ?? null);
+    setRepository(repo ? String(repo) : "");
     setMessages([]);
     setView("chat");
     setMobile(false);
@@ -256,6 +265,7 @@ function App() {
       setMessages(m);
       setCid(chat.id);
       setFolder(chat.group_id);
+      setRepository(chat.repository_id ? String(chat.repository_id) : "");
       setView("chat");
       setMobile(false);
     } catch (e) {
@@ -433,16 +443,24 @@ function App() {
       setDialogError("");
       setEditor({ kind: "chat", chat });
     },
-    editGroup = (group: Group | null) => {
+    editGroup = (group: Group | null, repo: number | null = null) => {
       setDialogError("");
-      setEditor({ kind: "group", group });
+      setEditor({
+        kind: "group",
+        group,
+        repository: group?.repository_id ?? repo,
+      });
     };
   async function editorAction(action: () => Promise<unknown>) {
     setBusy(true);
     setDialogError("");
     try {
       await action();
-      await refresh();
+      const next = await refresh();
+      if (cid)
+        setFolder(
+          next.conversations.find((c) => c.id === cid)?.group_id ?? null,
+        );
       setEditor(null);
     } catch (e) {
       setDialogError((e as Error).message);
@@ -465,6 +483,7 @@ function App() {
         view={view}
         active={cid}
         folder={folder}
+        repository={repository}
         busy={busy}
         collapsed={collapsed}
         mobile={mobile}
@@ -721,7 +740,11 @@ function App() {
                     <select
                       aria-label="Knowledge repository"
                       value={repository}
-                      onChange={(e) => setRepository(e.target.value)}
+                      disabled={busy || !!cid}
+                      onChange={(e) => {
+                        setRepository(e.target.value);
+                        setFolder(null);
+                      }}
                     >
                       <option value="">General chat</option>
                       {workspace.repositories.map((r) => (
@@ -838,7 +861,9 @@ function App() {
         {view === "admin" && session.user.role === "admin" && (
           <Admin
             notify={notify}
-            refresh={refresh}
+            refresh={async () => {
+              await refresh();
+            }}
             platformName={platformName}
             refreshPlatform={loadSession}
             onSessionEnded={loadSession}
@@ -849,8 +874,7 @@ function App() {
             <KnowledgeLibrary
               userId={session.user.id}
               onChat={(id) => {
-                setRepository(String(id));
-                newChat();
+                newChat(undefined, id);
               }}
             />
             <YourFiles
@@ -929,7 +953,12 @@ function App() {
                     "/api/chat-groups" +
                       (editor.group ? "/" + editor.group.id : ""),
                     editor.group ? "PATCH" : "POST",
-                    { name: String(f.get("name")) },
+                    {
+                      name: String(f.get("name")),
+                      ...(editor.group
+                        ? {}
+                        : { repository_id: editor.repository ?? null }),
+                    },
                   ),
                 );
             }}
@@ -951,11 +980,15 @@ function App() {
                     defaultValue={editor.chat.group_id ?? ""}
                   >
                     <option value="">No folder</option>
-                    {workspace.groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name}
-                      </option>
-                    ))}
+                    {workspace.groups
+                      .filter(
+                        (g) => g.repository_id === editor.chat.repository_id,
+                      )
+                      .map((g) => (
+                        <option key={g.id} value={g.id}>
+                          {g.name}
+                        </option>
+                      ))}
                   </select>
                 </Field>
                 <label className="checkbox-label">

@@ -19,7 +19,7 @@ it.skipIf(!url)(
       "INSERT INTO users(id,name,email,role) VALUES('v','Other','v@test','user')",
     );
     const local = new History(db);
-    await local.createGroup("u", "Local folder");
+    await local.createGroup("u", "Local folder", 7);
     const group = (await local.list("u")).groups[0].id,
       id = await local.append(
         "u",
@@ -31,11 +31,14 @@ it.skipIf(!url)(
         [],
         undefined,
         "Imported thoughts",
+        7,
       ),
       pg = new History(db, url);
     try {
       await pg.prepare();
       expect((await pg.list("u")).conversations).toHaveLength(1);
+      expect((await pg.list("u")).conversations[0].repository_id).toBe(7);
+      expect((await pg.list("u")).groups[0].repository_id).toBe(7);
       expect(await pg.messages("u", id)).toHaveLength(2);
       expect((await pg.messages("u", id))[1].reasoning).toBe(
         "Imported thoughts",
@@ -43,6 +46,7 @@ it.skipIf(!url)(
       await expect(pg.messages("v", id)).rejects.toThrow();
       await pg.delete("u", group, true);
       expect((await pg.list("u")).conversations[0].group_id).toBeNull();
+      expect((await pg.list("u")).conversations[0].repository_id).toBe(7);
       await pg.append(
         "u",
         id,

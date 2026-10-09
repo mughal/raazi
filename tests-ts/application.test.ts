@@ -2248,3 +2248,76 @@ it("paginates library documents and reports stale readiness", async () => {
     (await admin.get("/api/library/" + id + "?page=2")).body.documents,
   ).toHaveLength(1);
 });
+it("retains chat paths and permits folders only within the same path", async () => {
+  const rid = await repo();
+  const knowledgeFolder = (
+    await mutate("post", "/api/chat-groups", {
+      name: "Manual questions",
+      repository_id: rid,
+    })
+  ).body.id;
+  const generalFolder = (
+    await mutate("post", "/api/chat-groups", { name: "Work" })
+  ).body.id;
+  const first = await mutate("post", "/api/chat", {
+    message: "Path question",
+    repository_id: rid,
+    group_id: knowledgeFolder,
+  });
+  expect(first.status).toBe(200);
+  const cid = first.body.conversation_id;
+  const saved = (await admin.get("/api/workspace")).body;
+  expect(saved.conversations.find((c: any) => c.id === cid)).toMatchObject({
+    repository_id: rid,
+    group_id: knowledgeFolder,
+  });
+  expect(
+    saved.groups.find((g: any) => g.id === knowledgeFolder).repository_id,
+  ).toBe(rid);
+  expect(
+    (
+      await mutate("patch", "/api/conversations/" + cid, {
+        group_id: generalFolder,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (await mutate("patch", "/api/conversations/" + cid, { group_id: null }))
+      .status,
+  ).toBe(200);
+  expect(
+    (
+      await mutate("patch", "/api/conversations/" + cid, {
+        group_id: knowledgeFolder,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Wrong folder",
+        group_id: knowledgeFolder,
+      })
+    ).status,
+  ).toBe(400);
+  expect(
+    (
+      await mutate("post", "/api/chat", {
+        message: "Follow up",
+        conversation_id: cid,
+        repository_id: null,
+      })
+    ).status,
+  ).toBe(200);
+  expect(
+    (await admin.get("/api/workspace")).body.conversations.find(
+      (c: any) => c.id === cid,
+    ).repository_id,
+  ).toBe(rid);
+  await mutate("delete", "/api/chat-groups/" + knowledgeFolder);
+  expect(
+    (await admin.get("/api/workspace")).body.conversations.find(
+      (c: any) => c.id === cid,
+    ),
+  ).toMatchObject({ repository_id: rid, group_id: null });
+});

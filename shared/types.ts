@@ -18,11 +18,13 @@ export interface Chat {
   id: string;
   title: string;
   group_id: string | null;
+  repository_id: number | null;
   pinned: boolean;
   created_at: string;
   updated_at: string;
 }
 export interface Group {
+  repository_id: number | null;
   id: string;
   name: string;
   collapsed: boolean;

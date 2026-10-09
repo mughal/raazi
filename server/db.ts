@@ -126,7 +126,9 @@ export class LocalDB {
         attachments: "TEXT NOT NULL DEFAULT '[]'",
         reasoning: "TEXT NOT NULL DEFAULT ''",
       },
+      chat_groups: { repository_id: "INTEGER" },
       conversations: {
+        repository_id: "INTEGER",
         version: "INTEGER NOT NULL DEFAULT 0",
         group_id: "TEXT REFERENCES chat_groups(id) ON DELETE SET NULL",
         pinned: "INTEGER NOT NULL DEFAULT 0",
