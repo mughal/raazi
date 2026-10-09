@@ -265,3 +265,5 @@ Personal library verification: TypeScript/Vite build and 83 application fixture 
 Composer source selection (9 October 2026): the General chat / knowledge-source dropdown is removed. Start chats from General chats, a shared knowledge base, a Personal file, or a folder in the sidebar. The top bar shows the current source and folder. Saved chats keep their source after reload. Upload, model selection, thinking and the fixed composer remain available.
 
 Composer source-selection verification: TypeScript/Vite build and all 22 Edge fixture workflows passed, including mobile folder disclosure, general/shared/Personal source selection, citations, reload and draft preservation. Changed files pass formatting and whitespace checks. Server behavior and live integration verification are unchanged.
+
+Login label (9 October 2026): Portal sign-in labels its username field Windows/Domain User Name. Authentication behavior is unchanged.

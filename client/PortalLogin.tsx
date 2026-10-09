@@ -51,7 +51,7 @@ export function PortalLogin({ onLogin }: { onLogin: () => Promise<void> }) {
       ) : (
         <>
           <label>
-            Portal username
+            Windows/Domain User Name
             <input
               autoComplete="username"
               maxLength={128}

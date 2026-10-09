@@ -86,7 +86,7 @@ test("Portal sign-in requires password and authenticator before opening the work
   await expect(
     page.getByRole("link", { name: "Sign in with your work account" }),
   ).toHaveCount(0);
-  await page.getByLabel("Portal username").fill("employee");
+  await page.getByLabel("Windows/Domain User Name").fill("employee");
   await page.getByLabel("Password", { exact: true }).fill("fixture-password");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByLabel("Authenticator code")).toBeVisible();
