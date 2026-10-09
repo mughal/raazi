@@ -578,7 +578,7 @@ describe("authentication and settings", () => {
   });
 });
 describe("private chat history and folders", () => {
-  it("stores turns, pins, renames, moves and persists collapse; folder deletion keeps messages", async () => {
+  it("stores turns, pins, renames and moves; only empty folders can be deleted", async () => {
     await configure();
     const gid = (await mutate("post", "/api/chat-groups", { name: "Work" }))
         .body.id,
@@ -605,7 +605,16 @@ describe("private chat history and folders", () => {
       group_id: gid,
     });
     expect(w.groups[0]).toMatchObject({ name: "Finance", collapsed: true });
-    await mutate("delete", "/api/chat-groups/" + gid);
+    expect((await mutate("delete", "/api/chat-groups/" + gid)).status).toBe(
+      409,
+    );
+    expect(
+      (await admin.get("/api/workspace")).body.conversations[0].group_id,
+    ).toBe(gid);
+    await mutate("patch", "/api/conversations/" + id, { group_id: null });
+    expect((await mutate("delete", "/api/chat-groups/" + gid)).status).toBe(
+      200,
+    );
     w = (await admin.get("/api/workspace")).body;
     expect(w.conversations[0].group_id).toBeNull();
     expect((await admin.get("/api/conversations/" + id)).body).toHaveLength(2);
@@ -2314,7 +2323,13 @@ it("retains chat paths and permits folders only within the same path", async () 
       (c: any) => c.id === cid,
     ).repository_id,
   ).toBe(rid);
-  await mutate("delete", "/api/chat-groups/" + knowledgeFolder);
+  expect(
+    (await mutate("delete", "/api/chat-groups/" + knowledgeFolder)).status,
+  ).toBe(409);
+  await mutate("patch", "/api/conversations/" + cid, { group_id: null });
+  expect(
+    (await mutate("delete", "/api/chat-groups/" + knowledgeFolder)).status,
+  ).toBe(200);
   expect(
     (await admin.get("/api/workspace")).body.conversations.find(
       (c: any) => c.id === cid,

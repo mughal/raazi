@@ -19,12 +19,14 @@ export interface Chat {
   title: string;
   group_id: string | null;
   repository_id: number | null;
+  personal_file_id: string | null;
   pinned: boolean;
   created_at: string;
   updated_at: string;
 }
 export interface Group {
   repository_id: number | null;
+  personal_file_id: string | null;
   id: string;
   name: string;
   collapsed: boolean;
@@ -98,6 +100,7 @@ export interface Workspace {
   conversations: Chat[];
   groups: Group[];
   repositories: Repository[];
+  personal_files: Attachment[];
   chat_storage: string;
   uploads_enabled: boolean;
   supports_images: boolean;

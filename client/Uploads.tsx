@@ -77,7 +77,13 @@ export function AttachmentChips({
     </div>
   ) : null;
 }
-export function YourFiles({ onUse }: { onUse: (file: Attachment) => void }) {
+export function YourFiles({
+  onUse,
+  onChanged,
+}: {
+  onUse: (file: Attachment) => void;
+  onChanged?: () => Promise<void>;
+}) {
   const [files, setFiles] = useState<Attachment[]>([]),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -97,6 +103,7 @@ export function YourFiles({ onUse }: { onUse: (file: Attachment) => void }) {
         remove ? "DELETE" : "POST",
       );
       await load();
+      await onChanged?.();
     } catch (e) {
       setError((e as Error).message);
     } finally {

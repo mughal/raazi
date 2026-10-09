@@ -653,6 +653,7 @@ export async function createApp(config: Config) {
       uploads_enabled: storage.enabled(),
       supports_images: routing.models().some((m) => m.supports_images),
       repositories: allowed(res.locals.user),
+      personal_files: attachments.list(res.locals.user.id),
       ...(await history.list(res.locals.user.id)),
     }),
   );
@@ -682,10 +683,15 @@ export async function createApp(config: Config) {
     res.json({ ok: true });
   });
   app.post("/api/chat-groups", protect(), async (req, res) => {
-    const { name, repository_id } = parse(
+    const { name, repository_id, personal_file_id } = parse(
       z.object({
         name: text(100, true),
         repository_id: z.number().int().positive().nullable().optional(),
+        personal_file_id: z
+          .string()
+          .regex(/^[a-f0-9]{32}$/)
+          .nullable()
+          .optional(),
       }),
       req,
     );
@@ -694,11 +700,15 @@ export async function createApp(config: Config) {
       !allowed(res.locals.user).some((r) => r.id === repository_id)
     )
       throw new Failure(404, "Knowledge base not found.");
+    if (repository_id != null && personal_file_id)
+      throw new Failure(400, "Choose one knowledge source.");
+    if (personal_file_id) attachments.get(res.locals.user.id, personal_file_id);
     res.status(201).json({
       id: await history.createGroup(
         res.locals.user.id,
         name,
         repository_id ?? null,
+        personal_file_id ?? null,
       ),
     });
   });
@@ -747,6 +757,11 @@ export async function createApp(config: Config) {
             conversation_id: text(100),
             group_id: identifier.nullable().optional(),
             repository_id: z.number().int().positive().nullable().optional(),
+            personal_file_id: z
+              .string()
+              .regex(/^[a-f0-9]{32}$/)
+              .nullable()
+              .optional(),
             edit_message_id: z
               .string()
               .regex(/^[1-9][0-9]*$/)
@@ -799,6 +814,27 @@ export async function createApp(config: Config) {
         : data.conversation_id
           ? await history.messages(user.id, data.conversation_id, 20)
           : [];
+      if (data.conversation_id) {
+        const saved = await history.owned(user.id, data.conversation_id);
+        data.repository_id = saved.repository_id ?? null;
+        data.personal_file_id = saved.personal_file_id ?? null;
+      } else if (
+        data.repository_id == null &&
+        !data.group_id &&
+        !data.personal_file_id
+      ) {
+        data.personal_file_id = data.attachment_ids[0] ?? null;
+      }
+      if (data.repository_id != null && data.personal_file_id)
+        throw new Failure(400, "Choose one knowledge source.");
+      if (data.personal_file_id) {
+        attachments.get(user.id, data.personal_file_id);
+        data.attachment_ids = [
+          ...new Set([data.personal_file_id, ...data.attachment_ids]),
+        ];
+        if (data.attachment_ids.length > 5)
+          throw new Failure(400, "Use at most five files in one message.");
+      }
       const selectedFiles = attachments.selected(user.id, data.attachment_ids);
       const snapshots = (row: Row): Attachment[] => {
         try {
@@ -816,10 +852,6 @@ export async function createApp(config: Config) {
       ].slice(0, 5);
       const activeFiles = attachments.selected(user.id, activeIds, false);
       let repos: number[] = [];
-      if (data.conversation_id) {
-        const saved = await history.owned(user.id, data.conversation_id);
-        data.repository_id = saved.repository_id ?? null;
-      }
       if (data.repository_id != null) {
         if (!allowed(user).some((r) => r.id === data.repository_id))
           throw new Failure(403, "Repository access denied.");
@@ -845,6 +877,7 @@ export async function createApp(config: Config) {
           revision,
           "",
           data.repository_id ?? null,
+          data.personal_file_id ?? null,
         );
         res.json({ conversation_id, content, sources: [], attachments: files });
       };
@@ -884,6 +917,7 @@ export async function createApp(config: Config) {
           revision,
           "",
           data.repository_id ?? null,
+          data.personal_file_id ?? null,
         );
         res.json({
           conversation_id,
@@ -952,6 +986,7 @@ export async function createApp(config: Config) {
             revision,
             "",
             data.repository_id ?? null,
+            data.personal_file_id ?? null,
           );
           res.json({
             conversation_id,
@@ -1113,6 +1148,7 @@ export async function createApp(config: Config) {
         revision,
         reasoning,
         data.repository_id ?? null,
+        data.personal_file_id ?? null,
       );
       res.json({
         conversation_id,

@@ -74,7 +74,10 @@ export class History {
     }
   }
   async prepare() {
-    if (!this.pool) return;
+    if (!this.pool) {
+      await this.restoreFilePaths();
+      return;
+    }
     await this.tx(async (client) => {
       await client!.query(
         "SELECT pg_advisory_xact_lock(hashtextextended('raazi-chat-schema-v1',0))",
@@ -94,6 +97,10 @@ export class History {
       for (const table of ["groups", "conversations"] as const)
         await client!.query(
           `ALTER TABLE ${this.table(table)} ADD COLUMN IF NOT EXISTS repository_id INTEGER`,
+        );
+      for (const table of ["groups", "conversations"] as const)
+        await client!.query(
+          `ALTER TABLE ${this.table(table)} ADD COLUMN IF NOT EXISTS personal_file_id TEXT`,
         );
       if (
         (
@@ -115,6 +122,7 @@ export class History {
                 "collapsed",
                 "created_at",
                 "repository_id",
+                "personal_file_id",
               ]
             : [
                 "id",
@@ -122,6 +130,7 @@ export class History {
                 "title",
                 "group_id",
                 "repository_id",
+                "personal_file_id",
                 "pinned",
                 "created_at",
                 "updated_at",
@@ -152,6 +161,66 @@ export class History {
       await this.query(
         "INSERT INTO raazi_chat_imports(namespace,imported_at) VALUES(?,?)",
         [this.namespace, new Date().toISOString()],
+        client,
+      );
+    });
+    await this.restoreFilePaths();
+  }
+  async restoreFilePaths() {
+    await this.tx(async (client) => {
+      const checkpoint = this.pool
+        ? "raazi_chat_file_imports"
+        : "chat_file_imports";
+      await this.query(
+        `CREATE TABLE IF NOT EXISTS ${checkpoint}(namespace TEXT PRIMARY KEY)`,
+        [],
+        client,
+      );
+      if (
+        (
+          await this.query(
+            `SELECT namespace FROM ${checkpoint} WHERE namespace=?`,
+            [this.namespace],
+            client,
+          )
+        ).length
+      )
+        return;
+      const candidates = await this.query(
+        `SELECT c.id,c.user_id,m.attachments FROM ${this.table("conversations")} c JOIN ${this.table("messages")} m ON m.conversation_id=c.id ${this.pool ? "AND m.namespace=c.namespace" : ""} WHERE c.repository_id IS NULL AND c.personal_file_id IS NULL AND c.group_id IS NULL AND m.role='user' AND m.attachments<>'[]' ${this.pool ? "AND c.namespace=?" : ""} ORDER BY m.id`,
+        this.pool ? [this.namespace] : [],
+        client,
+      );
+      const seen = new Set<string>();
+      for (const chat of candidates) {
+        if (seen.has(chat.id)) continue;
+        let file: string | undefined;
+        try {
+          file = JSON.parse(chat.attachments)?.[0]?.id;
+        } catch {
+          continue;
+        }
+        if (!file || !/^[a-f0-9]{32}$/.test(file)) continue;
+        // Only current files owned by the chat owner can establish a personal path.
+        if (
+          !this.db.get(
+            "SELECT id FROM attachments WHERE id=? AND user_id=?",
+            file,
+            chat.user_id,
+          )
+        )
+          continue;
+        seen.add(chat.id);
+        const scope = this.scope(chat.user_id);
+        await this.query(
+          `UPDATE ${this.table("conversations")} SET personal_file_id=? WHERE ${scope.sql} AND id=? AND personal_file_id IS NULL`,
+          [file, ...scope.args, chat.id],
+          client,
+        );
+      }
+      await this.query(
+        `INSERT INTO ${checkpoint}(namespace) VALUES(?)`,
+        [this.namespace],
         client,
       );
     });
@@ -210,10 +279,25 @@ export class History {
     uid: string,
     name: string,
     repository: number | null = null,
+    personalFile: string | null = null,
   ) {
     const id = randomBytes(18).toString("base64url");
-    const keys = ["id", "user_id", "name", "created_at", "repository_id"],
-      values: any[] = [id, uid, name, new Date().toISOString(), repository];
+    const keys = [
+        "id",
+        "user_id",
+        "name",
+        "created_at",
+        "repository_id",
+        "personal_file_id",
+      ],
+      values: any[] = [
+        id,
+        uid,
+        name,
+        new Date().toISOString(),
+        repository,
+        personalFile,
+      ];
     if (this.pool) {
       keys.unshift("namespace");
       values.unshift(this.namespace);
@@ -229,10 +313,13 @@ export class History {
       if (!group && data.group_id) {
         const target = await this.owned(uid, data.group_id, true, c, true);
         const chat = await this.owned(uid, id, false, c, true);
-        if (target.repository_id !== chat.repository_id)
+        if (
+          target.repository_id !== chat.repository_id ||
+          target.personal_file_id !== chat.personal_file_id
+        )
           throw new Failure(
             400,
-            "Choose a folder in this chat's knowledge base or General chats.",
+            "Choose a folder within this chat’s knowledge source.",
           );
       }
       await this.owned(uid, id, group, c, true);
@@ -252,11 +339,19 @@ export class History {
     await this.tx(async (c) => {
       await this.owned(uid, id, group, c, true);
       const s = this.scope(uid);
-      if (group)
-        await this.query(
-          `UPDATE ${this.table("conversations")} SET group_id=NULL WHERE ${s.sql} AND group_id=?`,
-          [...s.args, id],
-          c,
+      if (
+        group &&
+        (
+          await this.query(
+            `SELECT id FROM ${this.table("conversations")} WHERE ${s.sql} AND group_id=? LIMIT 1`,
+            [...s.args, id],
+            c,
+          )
+        ).length
+      )
+        throw new Failure(
+          409,
+          "Move or delete the chats in this folder before deleting it.",
         );
       await this.query(
         `DELETE FROM ${this.table(group ? "groups" : "conversations")} WHERE ${s.sql} AND id=?`,
@@ -276,6 +371,7 @@ export class History {
     revision?: { messageId: string; tailId: string; version: number },
     reasoning = "",
     repository: number | null = null,
+    personalFile: string | null = null,
   ) {
     return this.tx(async (c) => {
       const now = new Date().toISOString();
@@ -333,7 +429,10 @@ export class History {
       } else {
         if (group) {
           const target = await this.owned(uid, group, true, c, true);
-          if (target.repository_id !== repository)
+          if (
+            target.repository_id !== repository ||
+            target.personal_file_id !== personalFile
+          )
             throw new Failure(
               400,
               "The folder belongs to a different chat section.",
@@ -346,6 +445,7 @@ export class History {
           "title",
           "group_id",
           "repository_id",
+          "personal_file_id",
           "created_at",
           "updated_at",
         ];
@@ -355,6 +455,7 @@ export class History {
           prompt.slice(0, 70),
           group,
           repository,
+          personalFile,
           now,
           now,
         ];

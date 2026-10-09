@@ -21,7 +21,12 @@ import { Modal, Field, Icon } from "./ui";
 import "./style.css";
 type Editor =
   | { kind: "chat"; chat: Chat }
-  | { kind: "group"; group: Group | null; repository?: number | null };
+  | {
+      kind: "group";
+      group: Group | null;
+      repository?: number | null;
+      personalFile?: string | null;
+    };
 function SourceView({
   id,
   platformName,
@@ -89,6 +94,7 @@ function App() {
     [draftFiles, setDraftFiles] = useState<Record<string, Attachment[]>>({}),
     [busyText, setBusyText] = useState("Raazi is thinking…"),
     [repository, setRepository] = useState(""),
+    [personalFile, setPersonalFile] = useState<string | null>(null),
     [modelKey, setModelKey] = useState(""),
     [thinking, setThinking] = useState(false),
     [busy, setBusy] = useState(false),
@@ -107,11 +113,28 @@ function App() {
     fileInput = useRef<HTMLInputElement>(null),
     loadSequence = useRef(0),
     toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null),
-    draftKey = cid ?? "new:" + repository + ":" + (folder ?? ""),
+    draftKey =
+      cid ??
+      "new:" + repository + ":" + (personalFile ?? "") + ":" + (folder ?? ""),
     draft = drafts[draftKey] ?? "",
     files = draftFiles[draftKey] ?? [];
   const setDraft = (value: string) =>
     setDrafts((d) => ({ ...d, [draftKey]: value }));
+  const removeDraftFile = (id: string) => {
+    const remaining = files.filter((f) => f.id !== id);
+    if (!cid && id === personalFile) {
+      setPersonalFile(null);
+      setFolder(null);
+      setDrafts((d) => ({ ...d, ["new:::"]: draft }));
+      setDraftFiles((d) => ({
+        ...d,
+        [draftKey]: remaining,
+        ["new:::"]: remaining,
+      }));
+    } else {
+      setDraftFiles((d) => ({ ...d, [draftKey]: remaining }));
+    }
+  };
   const notify = (message: string) => {
     setToast(message);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -148,6 +171,7 @@ function App() {
               setCid(state.cid);
               const chat = loaded.conversations.find((c) => c.id === state.cid);
               setFolder(chat?.group_id ?? null);
+              setPersonalFile(chat?.personal_file_id ?? null);
               setRepository(
                 chat?.repository_id ? String(chat.repository_id) : "",
               );
@@ -163,6 +187,9 @@ function App() {
       if (session?.user)
         sessionStorage.removeItem("raazi-page:" + session.user.id);
       setWorkspace(null);
+      setPersonalFile(null);
+      setRepository("");
+      setFolder(null);
       setMessages([]);
       setCid(null);
       setDrafts({});
@@ -244,12 +271,27 @@ function App() {
     setView(name);
     setMobile(false);
   };
-  const newChat = (group?: string, repo: number | null = null) => {
+  const newChat = (
+    group?: string,
+    repo: number | null = null,
+    file: string | null = null,
+  ) => {
     if (busy) return;
     loadSequence.current++;
     setCid(null);
     setFolder(group ?? null);
     setRepository(repo ? String(repo) : "");
+    setPersonalFile(file);
+    if (file) {
+      const selected = workspace?.personal_files.find((f) => f.id === file);
+      if (selected)
+        setDraftFiles((d) => ({
+          ...d,
+          ["new:" + (repo ?? "") + ":" + file + ":" + (group ?? "")]: [
+            selected,
+          ],
+        }));
+    }
     setMessages([]);
     setView("chat");
     setMobile(false);
@@ -265,6 +307,7 @@ function App() {
       setMessages(m);
       setCid(chat.id);
       setFolder(chat.group_id);
+      setPersonalFile(chat.personal_file_id);
       setRepository(chat.repository_id ? String(chat.repository_id) : "");
       setView("chat");
       setMobile(false);
@@ -292,6 +335,7 @@ function App() {
           [draftKey]: [...(d[draftKey] ?? []), uploaded],
         }));
       }
+      await refresh();
     }, "Upload and index files…");
   }
   async function retryFile(file: Attachment) {
@@ -324,6 +368,7 @@ function App() {
         conversation_id: cid ?? "",
         group_id: folder,
         repository_id: repository ? Number(repository) : null,
+        personal_file_id: personalFile,
         attachment_ids: submittedFiles.map((f) => f.id),
         model_key: modelKey || undefined,
         use_decision: !!workspace?.routing_enabled,
@@ -343,7 +388,10 @@ function App() {
         [result.conversation_id]: [],
       }));
       setCid(result.conversation_id);
-      await refresh();
+      const saved = (await refresh()).conversations.find(
+        (c) => c.id === result.conversation_id,
+      );
+      setPersonalFile(saved?.personal_file_id ?? null);
     });
   }
   async function resendQuestion(
@@ -362,6 +410,7 @@ function App() {
         message: prompt,
         edit_message_id: String(message.id),
         repository_id: repository ? Number(repository) : null,
+        personal_file_id: personalFile,
         attachment_ids: attached.map((f: Attachment) => f.id),
         model_key: modelKey || undefined,
         use_decision: !!workspace?.routing_enabled,
@@ -443,12 +492,17 @@ function App() {
       setDialogError("");
       setEditor({ kind: "chat", chat });
     },
-    editGroup = (group: Group | null, repo: number | null = null) => {
+    editGroup = (
+      group: Group | null,
+      repo: number | null = null,
+      file: string | null = null,
+    ) => {
       setDialogError("");
       setEditor({
         kind: "group",
         group,
         repository: group?.repository_id ?? repo,
+        personalFile: group?.personal_file_id ?? file,
       });
     };
   async function editorAction(action: () => Promise<unknown>) {
@@ -484,6 +538,33 @@ function App() {
         active={cid}
         folder={folder}
         repository={repository}
+        personalFile={personalFile}
+        moveChat={(chat, group) =>
+          void perform(async () => {
+            await api("/api/conversations/" + chat.id, "PATCH", {
+              group_id: group,
+            });
+            const next = await refresh();
+            if (cid === chat.id)
+              setFolder(
+                next.conversations.find((c) => c.id === cid)?.group_id ?? null,
+              );
+          }, "Moving chat…")
+        }
+        deleteChat={(chat) =>
+          void perform(async () => {
+            if (!confirm("Delete this conversation?")) return;
+            await api("/api/conversations/" + chat.id, "DELETE");
+            if (cid === chat.id) {
+              setCid(null);
+              setFolder(null);
+              setPersonalFile(null);
+              setRepository("");
+              setMessages([]);
+            }
+            await refresh();
+          }, "Deleting chat…")
+        }
         busy={busy}
         collapsed={collapsed}
         mobile={mobile}
@@ -677,12 +758,7 @@ function App() {
                 <AttachmentChips
                   files={files}
                   busy={busy}
-                  onRemove={(id) =>
-                    setDraftFiles((d) => ({
-                      ...d,
-                      [draftKey]: files.filter((f) => f.id !== id),
-                    }))
-                  }
+                  onRemove={removeDraftFile}
                   onRetry={(f) => void retryFile(f)}
                 />
                 <input
@@ -743,10 +819,18 @@ function App() {
                       disabled={busy || !!cid}
                       onChange={(e) => {
                         setRepository(e.target.value);
+                        setPersonalFile(null);
                         setFolder(null);
                       }}
                     >
-                      <option value="">General chat</option>
+                      <option value="">
+                        {personalFile
+                          ? "Personal · " +
+                            (workspace.personal_files.find(
+                              (f) => f.id === personalFile,
+                            )?.filename ?? "Unavailable file")
+                          : "General chat"}
+                      </option>
                       {workspace.repositories.map((r) => (
                         <option key={r.id} value={r.id}>
                           {r.name}
@@ -878,9 +962,11 @@ function App() {
               }}
             />
             <YourFiles
+              onChanged={async () => {
+                await refresh();
+              }}
               onUse={(file) => {
-                setDraftFiles((d) => ({ ...d, ["new:"]: [file] }));
-                newChat();
+                newChat(undefined, null, file.id);
               }}
             />
           </div>
@@ -957,7 +1043,10 @@ function App() {
                       name: String(f.get("name")),
                       ...(editor.group
                         ? {}
-                        : { repository_id: editor.repository ?? null }),
+                        : {
+                            repository_id: editor.repository ?? null,
+                            personal_file_id: editor.personalFile ?? null,
+                          }),
                     },
                   ),
                 );
@@ -982,7 +1071,9 @@ function App() {
                     <option value="">No folder</option>
                     {workspace.groups
                       .filter(
-                        (g) => g.repository_id === editor.chat.repository_id,
+                        (g) =>
+                          g.repository_id === editor.chat.repository_id &&
+                          g.personal_file_id === editor.chat.personal_file_id,
                       )
                       .map((g) => (
                         <option key={g.id} value={g.id}>
@@ -1038,14 +1129,20 @@ function App() {
                 <button
                   type="button"
                   className="danger"
-                  disabled={busy}
+                  disabled={
+                    busy ||
+                    (editor.kind === "group" &&
+                      workspace.conversations.some(
+                        (c) => c.group_id === editor.group?.id,
+                      ))
+                  }
                   onClick={() => {
                     const isChat = editor.kind === "chat";
                     if (
                       !confirm(
                         isChat
                           ? "Delete this conversation?"
-                          : "Delete this folder? Its chats will be kept.",
+                          : "Delete this empty folder?",
                       )
                     )
                       return;
@@ -1070,7 +1167,7 @@ function App() {
                 <small>
                   {editor.kind === "chat"
                     ? "This removes the conversation and messages."
-                    : "Chats remain in your history."}
+                    : "Move or delete all chats before deleting a folder."}
                 </small>
               </div>
             )}

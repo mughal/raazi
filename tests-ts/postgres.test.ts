@@ -44,6 +44,10 @@ it.skipIf(!url)(
         "Imported thoughts",
       );
       await expect(pg.messages("v", id)).rejects.toThrow();
+      await expect(pg.delete("u", group, true)).rejects.toThrow(
+        "Move or delete",
+      );
+      await pg.update("u", id, { group_id: null });
       await pg.delete("u", group, true);
       expect((await pg.list("u")).conversations[0].group_id).toBeNull();
       expect((await pg.list("u")).conversations[0].repository_id).toBe(7);

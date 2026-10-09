@@ -275,3 +275,174 @@ it("validates images, sends vision content to the local model, and persists refe
     ),
   ).toBe(true);
 });
+
+it("keeps Personal file paths private, restores their source each turn, and protects nonempty folders", async () => {
+  await service.storage.save(storageInput);
+  const first = (
+    await upload(
+      "personal-path.txt",
+      Buffer.from("Travel expenses require manager approval."),
+    )
+  ).body;
+  const second = (
+    await upload(
+      "another-personal.txt",
+      Buffer.from("Annual leave is 25 days."),
+    )
+  ).body;
+  const createFolder = (file: string | null) =>
+    admin
+      .post("/api/chat-groups")
+      .set("X-CSRF-Token", csrf)
+      .send({ name: "Questions", personal_file_id: file });
+  const folder = (await createFolder(first.id)).body.id;
+  const otherFolder = (await createFolder(second.id)).body.id;
+  const generalFolder = (await createFolder(null)).body.id;
+  const answer = await admin.post("/api/chat").set("X-CSRF-Token", csrf).send({
+    message: "Travel expenses manager approval",
+    personal_file_id: first.id,
+    group_id: folder,
+  });
+  expect(answer.status).toBe(200);
+  const cid = answer.body.conversation_id;
+  let workspace = (await admin.get("/api/workspace")).body;
+  expect(workspace.personal_files.map((f: any) => f.id)).toContain(first.id);
+  expect(workspace.conversations.find((c: any) => c.id === cid)).toMatchObject({
+    personal_file_id: first.id,
+    repository_id: null,
+    group_id: folder,
+  });
+  const followup = await admin
+    .post("/api/chat")
+    .set("X-CSRF-Token", csrf)
+    .send({
+      message: "Travel expenses manager approval",
+      conversation_id: cid,
+      personal_file_id: second.id,
+    });
+  expect(followup.status).toBe(200);
+  expect(followup.body.attachments.map((f: any) => f.id)).toContain(first.id);
+  expect(followup.body.attachments.map((f: any) => f.id)).not.toContain(
+    second.id,
+  );
+  for (const target of [otherFolder, generalFolder])
+    expect(
+      (
+        await admin
+          .patch("/api/conversations/" + cid)
+          .set("X-CSRF-Token", csrf)
+          .send({ group_id: target })
+      ).status,
+    ).toBe(400);
+  expect(
+    (await admin.delete("/api/chat-groups/" + folder).set("X-CSRF-Token", csrf))
+      .status,
+  ).toBe(409);
+  expect((await admin.get("/api/conversations/" + cid)).body).toHaveLength(4);
+  await admin
+    .patch("/api/conversations/" + cid)
+    .set("X-CSRF-Token", csrf)
+    .send({ group_id: null });
+  expect(
+    (await admin.delete("/api/chat-groups/" + folder).set("X-CSRF-Token", csrf))
+      .status,
+  ).toBe(200);
+  const cookie = await stranger();
+  const foreign = request(service.app);
+  expect(
+    (await foreign.get("/api/workspace").set("Cookie", cookie)).body
+      .personal_files,
+  ).toEqual([]);
+  expect(
+    (
+      await foreign
+        .post("/api/chat-groups")
+        .set("Cookie", cookie)
+        .set("X-CSRF-Token", "stranger-csrf")
+        .send({ name: "Foreign", personal_file_id: first.id })
+    ).status,
+  ).toBe(404);
+  expect(
+    (
+      await foreign
+        .post("/api/chat")
+        .set("Cookie", cookie)
+        .set("X-CSRF-Token", "stranger-csrf")
+        .send({ message: "Tell me", personal_file_id: first.id })
+    ).status,
+  ).toBe(404);
+  const auto = await chat([second.id]);
+  expect(auto.status).toBe(200);
+  workspace = (await admin.get("/api/workspace")).body;
+  expect(
+    workspace.conversations.find((c: any) => c.id === auto.body.conversation_id)
+      .personal_file_id,
+  ).toBe(second.id);
+  await admin.delete("/api/attachments/" + first.id).set("X-CSRF-Token", csrf);
+  expect((await admin.get("/api/conversations/" + cid)).status).toBe(200);
+  expect(
+    (
+      await admin
+        .post("/api/chat")
+        .set("X-CSRF-Token", csrf)
+        .send({ message: "Again", conversation_id: cid })
+    ).status,
+  ).toBe(404);
+});
+
+it("imports old unfiled upload chats once and preserves existing folder paths", async () => {
+  await service.storage.save(storageInput);
+  const file = (
+    await upload(
+      "old-file.txt",
+      Buffer.from("Travel expenses require manager approval."),
+    )
+  ).body;
+  const fileOwner = service.db.get(
+    "SELECT user_id FROM attachments WHERE id=?",
+    file.id,
+  )!.user_id;
+  const unfiled = await service.history.append(
+    fileOwner,
+    undefined,
+    "Old question",
+    "Old reply",
+    [],
+    null,
+    [file],
+  );
+  const group = await service.history.createGroup(
+    fileOwner,
+    "Existing general folder",
+  );
+  const filed = await service.history.append(
+    fileOwner,
+    undefined,
+    "Filed question",
+    "Reply",
+    [],
+    group,
+    [file],
+  );
+  service.db.run("DELETE FROM chat_file_imports");
+  await service.history.prepare();
+  expect(
+    (await service.history.owned(fileOwner, unfiled)).personal_file_id,
+  ).toBe(file.id);
+  expect(
+    (await service.history.owned(fileOwner, filed)).personal_file_id,
+  ).toBeNull();
+  const later = await service.history.append(
+    fileOwner,
+    undefined,
+    "Later general question",
+    "Reply",
+    [],
+    null,
+    [file],
+  );
+  await service.history.prepare();
+  expect(
+    (await service.history.owned(fileOwner, later)).personal_file_id,
+  ).toBeNull();
+});

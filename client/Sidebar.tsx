@@ -1,6 +1,8 @@
-import { useEffect, useState } from "react";
-import type { Workspace, Chat, Group, User } from "../shared/types";
+import { useEffect, useState, type DragEvent, type ReactNode } from "react";
+import type { Workspace, Chat, Group, User, Attachment } from "../shared/types";
 import { Icon } from "./ui";
+import { DocumentHint } from "./DocumentHint";
+import { createPortal } from "react-dom";
 type Props = {
   platformName: string;
   workspace: Workspace;
@@ -9,26 +11,59 @@ type Props = {
   active: string | null;
   folder: string | null;
   repository: string;
+  personalFile: string | null;
   busy: boolean;
   collapsed: boolean;
   mobile: boolean;
   toggle: () => void;
   closeMobile: () => void;
-  newChat: (group?: string, repository?: number | null) => void;
+  newChat: (
+    group?: string,
+    repository?: number | null,
+    file?: string | null,
+  ) => void;
   openChat: (chat: Chat) => void;
   openView: (view: string) => void;
   editChat: (chat: Chat) => void;
-  editGroup: (group: Group | null, repository?: number | null) => void;
+  editGroup: (
+    group: Group | null,
+    repository?: number | null,
+    file?: string | null,
+  ) => void;
   collapseGroup: (group: Group) => void;
+  moveChat: (chat: Chat, group: string | null) => void;
+  deleteChat: (chat: Chat) => void;
   logout: () => void;
 };
 export function Sidebar(p: Props) {
   const [query, setQuery] = useState("");
+  const [menu, setMenu] = useState<string | null>(null);
+  const [menuPosition, setMenuPosition] = useState({ left: 0, top: 0 });
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  useEffect(() => {
+    const dismiss = (e: globalThis.MouseEvent) => {
+      if (!(e.target as Element).closest(".chat-actions, .chat-action-menu"))
+        setMenu(null);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    document.addEventListener("click", dismiss);
+    document.addEventListener("keydown", escape);
+    return () => {
+      document.removeEventListener("click", dismiss);
+      document.removeEventListener("keydown", escape);
+    };
+  }, []);
   const [closed, setClosed] = useState<Record<string, boolean>>(() => {
     try {
       return {
         ...Object.fromEntries(
           p.workspace.repositories.map((r) => ["repo:" + r.id, true]),
+        ),
+        ...Object.fromEntries(
+          p.workspace.personal_files.map((f) => ["file:" + f.id, true]),
         ),
         ...JSON.parse(
           sessionStorage.getItem("raazi-sidebar:" + p.user.id) ?? "{}",
@@ -52,13 +87,28 @@ export function Sidebar(p: Props) {
         ["repo:" + p.repository]: false,
       }));
   }, [p.repository]);
-  const disclosure = (key: string, label: string, icon: string) => (
+  useEffect(() => {
+    if (p.personalFile)
+      setClosed((s) => ({
+        ...s,
+        library: false,
+        personal: false,
+        ["file:" + p.personalFile]: false,
+      }));
+  }, [p.personalFile]);
+  const disclosure = (
+    key: string,
+    label: string,
+    icon: string,
+    hint?: ReactNode,
+  ) => (
     <button
       className="section-toggle"
+      aria-label={label}
       aria-expanded={!!query || !closed[key]}
       onClick={() => setClosed((s) => ({ ...s, [key]: !s[key] }))}
     >
-      <Icon name={icon} />
+      {hint ?? <Icon name={icon} />}
       <span>{label}</span>
       <span
         className={
@@ -74,6 +124,17 @@ export function Sidebar(p: Props) {
   const row = (c: Chat, nested = false) => (
     <div
       key={c.id}
+      draggable={!p.busy}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("application/x-raazi-chat", c.id);
+        e.dataTransfer.effectAllowed = "move";
+        setDragging(c.id);
+        setMenu(null);
+      }}
+      onDragEnd={() => {
+        setDragging(null);
+        setDropTarget(null);
+      }}
       className={
         "history-row" +
         (p.active === c.id ? " selected" : "") +
@@ -89,48 +150,185 @@ export function Sidebar(p: Props) {
         <Icon name={c.pinned ? "pin" : "chat"} />
         <span>{c.title}</span>
       </button>
-      <button
-        className="row-menu"
-        aria-label={"Manage chat " + c.title}
-        onClick={() => p.editChat(c)}
-        disabled={p.busy}
-      >
-        <Icon name="more" />
-      </button>
+      <div className="chat-actions">
+        <button
+          className="row-menu"
+          aria-label={"Manage chat " + c.title}
+          aria-haspopup="menu"
+          aria-expanded={menu === c.id + ":" + nested}
+          disabled={p.busy}
+          onClick={(e) => {
+            const box = e.currentTarget.getBoundingClientRect();
+            setMenuPosition({
+              left: Math.max(8, box.right - 160),
+              top: Math.min(box.bottom + 4, innerHeight - 150),
+            });
+            setMenu((m) =>
+              m === c.id + ":" + nested ? null : c.id + ":" + nested,
+            );
+          }}
+        >
+          <Icon name="more" />
+        </button>
+        {menu === c.id + ":" + nested &&
+          createPortal(
+            <div
+              className="chat-action-menu"
+              style={menuPosition}
+              role="menu"
+              aria-label={"Actions for " + c.title}
+            >
+              <button
+                autoFocus
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  p.editChat(c);
+                }}
+              >
+                Move chat
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  p.editChat(c);
+                }}
+              >
+                Edit chat
+              </button>
+              <button
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  setMenu(null);
+                  p.deleteChat(c);
+                }}
+              >
+                Delete chat
+              </button>
+            </div>,
+            document.body,
+          )}
+      </div>
     </div>
   );
-  const pathSection = (repo: number | null, label: string) => {
-    const key = repo === null ? "general" : "repo:" + repo;
+  const dropEvents = (
+    repo: number | null,
+    file: string | null,
+    group: string | null,
+    key: string,
+  ) => ({
+    onDragOver: (e: DragEvent) => {
+      const chat = w.conversations.find((c) => c.id === dragging);
+      if (
+        !p.busy &&
+        chat &&
+        (chat.repository_id ?? null) === repo &&
+        (chat.personal_file_id ?? null) === file &&
+        chat.group_id !== group
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.dataTransfer.dropEffect = "move";
+        setDropTarget(key);
+      }
+    },
+    onDragLeave: (e: DragEvent) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node))
+        setDropTarget(null);
+    },
+    onDrop: (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setDropTarget(null);
+      setDragging(null);
+      const chat = w.conversations.find(
+        (c) => c.id === e.dataTransfer.getData("application/x-raazi-chat"),
+      );
+      if (
+        !p.busy &&
+        chat &&
+        (chat.repository_id ?? null) === repo &&
+        (chat.personal_file_id ?? null) === file &&
+        chat.group_id !== group
+      )
+        p.moveChat(chat, group);
+    },
+  });
+  const pathSection = (
+    repo: number | null,
+    label: string,
+    file: Attachment | null = null,
+  ) => {
+    const fileId = file?.id ?? null;
+    const key = file
+      ? "file:" + file.id
+      : repo === null
+        ? "general"
+        : "repo:" + repo;
     const chats = w.conversations.filter(
-      (c) => (c.repository_id ?? null) === repo && visible(c),
+      (c) =>
+        (c.repository_id ?? null) === repo &&
+        (c.personal_file_id ?? null) === fileId &&
+        visible(c),
     );
     return (
       <section className="history-section path-section" key={key}>
-        {disclosure(key, label, repo === null ? "chat" : "folder")}
+        <div
+          className={dropTarget === key ? "chat-drop-target" : ""}
+          {...dropEvents(repo, fileId, null, key)}
+        >
+          {disclosure(
+            key,
+            label,
+            repo === null ? "chat" : "folder",
+            file ? (
+              <DocumentHint label={label} file={file} />
+            ) : repo != null ? (
+              <DocumentHint label={label} repository={repo} />
+            ) : undefined,
+          )}
+        </div>
         {(query || !closed[key]) && (
           <div className="path-children">
             <div className="path-actions">
               <button
                 className="text-button"
+                aria-label={
+                  repo === null && !file
+                    ? "New general chat"
+                    : "New chat in " + label
+                }
                 disabled={p.busy}
-                onClick={() => p.newChat(undefined, repo)}
+                onClick={() => p.newChat(undefined, repo, fileId)}
               >
                 <Icon name="plus" />
-                {repo === null ? "New general chat" : "New chat in " + label}
+                {repo === null && !file
+                  ? "New general chat"
+                  : file
+                    ? "Chat with file"
+                    : "New chat in " + label}
               </button>
               <button
                 className="icon-button"
                 aria-label={
-                  repo === null ? "Create folder" : "Create folder in " + label
+                  repo === null && !file
+                    ? "Create folder"
+                    : "Create folder in " + label
                 }
                 disabled={p.busy}
-                onClick={() => p.editGroup(null, repo)}
+                onClick={() => p.editGroup(null, repo, fileId)}
               >
                 <Icon name="folder" />
               </button>
             </div>
             {w.groups
-              .filter((g) => (g.repository_id ?? null) === repo)
+              .filter(
+                (g) =>
+                  (g.repository_id ?? null) === repo &&
+                  (g.personal_file_id ?? null) === fileId,
+              )
               .map((g) => {
                 const chats = w.conversations.filter(
                   (c) => c.group_id === g.id && visible(c),
@@ -138,8 +336,10 @@ export function Sidebar(p: Props) {
                 return (
                   <div key={g.id}>
                     <div
+                      {...dropEvents(repo, fileId, g.id, g.id)}
                       className={
                         "folder-row" +
+                        (dropTarget === g.id ? " chat-drop-target" : "") +
                         (p.folder === g.id ? " current-folder" : "")
                       }
                     >
@@ -172,7 +372,7 @@ export function Sidebar(p: Props) {
                         {chats.map((c) => row(c, true))}
                         <button
                           className="text-button"
-                          onClick={() => p.newChat(g.id, repo)}
+                          onClick={() => p.newChat(g.id, repo, fileId)}
                           disabled={p.busy}
                         >
                           <Icon name="plus" />
@@ -318,6 +518,21 @@ export function Sidebar(p: Props) {
                   Browse documents
                 </button>
                 {w.repositories.map((r) => pathSection(r.id, r.name))}
+                <section className="history-section personal-section">
+                  {disclosure("personal", "Personal", "book")}
+                  {(query || !closed.personal) && (
+                    <div className="library-children">
+                      {w.personal_files.map((file) =>
+                        pathSection(null, file.filename, file),
+                      )}
+                      {!w.personal_files.length && (
+                        <p className="sidebar-hint">
+                          No personal files yet. Upload a file with + in chat.
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </section>
                 {!w.repositories.length && (
                   <p className="sidebar-hint">No knowledge bases available.</p>
                 )}
@@ -337,6 +552,25 @@ export function Sidebar(p: Props) {
                   (c) =>
                     c.repository_id != null &&
                     !w.repositories.some((r) => r.id === c.repository_id) &&
+                    visible(c),
+                )
+                .map((c) => row(c))}
+            </section>
+          )}
+          {w.conversations.some(
+            (c) =>
+              c.personal_file_id &&
+              !w.personal_files.some((f) => f.id === c.personal_file_id),
+          ) && (
+            <section className="history-section">
+              <div className="section-label">Unavailable personal files</div>
+              {w.conversations
+                .filter(
+                  (c) =>
+                    c.personal_file_id &&
+                    !w.personal_files.some(
+                      (f) => f.id === c.personal_file_id,
+                    ) &&
                     visible(c),
                 )
                 .map((c) => row(c))}

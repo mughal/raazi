@@ -1332,6 +1332,7 @@ test("sidebar disclosures keep knowledge chats and custom folders under their pa
   await section
     .getByRole("button", { name: "Manage chat Sidebar knowledge question" })
     .click();
+  await page.getByRole("menuitem", { name: "Move chat", exact: true }).click();
   await page
     .getByLabel("Chat folder")
     .selectOption({ label: "My manual questions" });
@@ -1369,4 +1370,207 @@ test("sidebar disclosures keep knowledge chats and custom folders under their pa
   });
   await general.getByRole("button", { name: "New general chat" }).click();
   await expect(page.getByLabel("Knowledge repository")).toHaveValue("");
+});
+
+test("Personal files, document hover details, drag moves, chat actions and empty-folder deletion", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page
+    .getByRole("button", { name: "Continue as local administrator" })
+    .click();
+  const session = await (await page.request.get("/api/session")).json();
+  const headers = { "X-CSRF-Token": session.csrf };
+  await page.request.put("/api/admin/storage", {
+    headers,
+    data: {
+      enabled: true,
+      endpoint: "https://storage.test",
+      region: "test",
+      bucket: "personal-tests",
+      prefix: "raazi",
+      force_path_style: true,
+      access_key: "fixture-key",
+      secret_key: "fixture-secret",
+    },
+  });
+  await page.request.put("/api/admin/settings", {
+    headers,
+    data: {
+      base_url: "http://model.test/v1",
+      model: "local",
+      system_prompt: "Use files.",
+      supports_images: false,
+    },
+  });
+  const repository = await (
+    await page.request.post("/api/admin/repositories", {
+      headers,
+      data: {
+        name: "Hover Manuals",
+        description: "Department reference documents.",
+        groups: [],
+      },
+    })
+  ).json();
+  await page.request.post("/api/admin/documents", {
+    headers,
+    data: {
+      repository_id: repository.id,
+      title: "Hover leave guide",
+      content: "Annual leave allowance is 25 days.",
+    },
+  });
+  await page.reload();
+  const details = page.getByLabel("Document details for Hover Manuals", {
+    exact: true,
+  });
+  await details.hover();
+  await expect(page.getByRole("tooltip")).toContainText("Hover leave guide");
+  await expect(page.getByRole("tooltip")).toContainText("1 document");
+  await page.screenshot({
+    path: "data/react-library-hover.png",
+    fullPage: true,
+  });
+  await page.getByLabel("Search chats").click();
+  await details.focus();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Department reference documents.",
+  );
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  await page.getByRole("button", { name: "New chat", exact: true }).click();
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload files" }).click();
+  await (
+    await chooser
+  ).setFiles({
+    name: "personal-sidebar.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("Travel expenses require manager approval."),
+  });
+  const personal = page.locator(".personal-section");
+  const fileSection = personal.locator(".path-section").filter({
+    has: page.getByRole("button", {
+      name: "personal-sidebar.txt",
+      exact: true,
+    }),
+  });
+  await expect(fileSection).toBeVisible();
+  await personal
+    .getByLabel("Document details for personal-sidebar.txt", { exact: true })
+    .hover();
+  await expect(page.getByRole("tooltip")).toContainText("ready");
+  await page
+    .getByLabel("Message Raazi")
+    .fill("Personal sidebar approval question");
+  await page.getByRole("button", { name: "Send message" }).click();
+  await expect(
+    fileSection.getByRole("button", {
+      name: "Personal sidebar approval question",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await fileSection
+    .getByRole("button", { name: "Create folder in personal-sidebar.txt" })
+    .click();
+  await page.getByLabel("Folder name").fill("Personal questions");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  const folderRow = fileSection.locator(".folder-row").filter({
+    has: page.getByRole("button", {
+      name: "Manage folder Personal questions",
+    }),
+  });
+  const chatRow = fileSection.locator(".history-row").filter({
+    has: page.getByRole("button", {
+      name: "Personal sidebar approval question",
+      exact: true,
+    }),
+  });
+  await chatRow.dragTo(folderRow);
+  await expect(
+    fileSection.locator(".folder-children").getByRole("button", {
+      name: "Personal sidebar approval question",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Manage folder Personal questions" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Delete folder", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByRole("dialog")).toContainText(
+    "Move or delete all chats",
+  );
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await chatRow
+    .getByRole("button", {
+      name: "Manage chat Personal sidebar approval question",
+    })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: "Delete chat", exact: true }),
+  ).toBeVisible();
+  await page.getByRole("menuitem", { name: "Move chat", exact: true }).click();
+  await page.getByLabel("Chat folder").selectOption("");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(
+    fileSection.locator(".folder-children .history-row"),
+  ).toHaveCount(0);
+  await page.reload();
+  await expect(
+    page.getByLabel("Knowledge repository").locator("option:checked"),
+  ).toContainText("Personal · personal-sidebar.txt");
+  await expect(chatRow).toBeVisible();
+  await chatRow.dragTo(folderRow);
+  await expect(
+    fileSection.locator(".folder-children .history-row"),
+  ).toHaveCount(1);
+  await fileSection.getByRole("button", { name: "New chat in folder" }).click();
+  await expect(page.locator(".composer .attachment-chip")).toContainText(
+    "personal-sidebar.txt",
+  );
+  await chatRow
+    .getByRole("button", {
+      name: "Manage chat Personal sidebar approval question",
+    })
+    .click();
+  await page.screenshot({
+    path: "data/react-personal-library.png",
+    fullPage: true,
+  });
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("menuitem", { name: "Delete chat", exact: true })
+    .click();
+  await expect(chatRow).toHaveCount(0);
+  await page
+    .getByRole("button", { name: "Manage folder Personal questions" })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Delete folder", exact: true }),
+  ).toBeEnabled();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page
+    .getByRole("button", { name: "Delete folder", exact: true })
+    .click();
+  await expect(folderRow).toHaveCount(0);
+  await fileSection
+    .getByRole("button", {
+      name: "New chat in personal-sidebar.txt",
+      exact: true,
+    })
+    .click();
+  await page.getByLabel("Message Raazi").fill("Keep my question draft");
+  await page
+    .getByRole("button", { name: "Remove personal-sidebar.txt", exact: true })
+    .click();
+  await expect(
+    page.getByLabel("Knowledge repository").locator("option:checked"),
+  ).toHaveText("General chat");
+  await expect(page.locator(".composer .attachment-chip")).toHaveCount(0);
+  await expect(page.getByLabel("Message Raazi")).toHaveValue(
+    "Keep my question draft",
+  );
 });
