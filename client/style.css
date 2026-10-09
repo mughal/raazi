@@ -458,6 +458,9 @@ kbd {
   max-width: 600px;
 }
 .topbar-context {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   display: block;
   font-size: 10px;
   color: #a0a6ac;
@@ -1134,6 +1137,9 @@ dialog::backdrop {
     max-width: 40vw;
   }
   .topbar-context {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     font-size: 9px;
   }
   .badge {

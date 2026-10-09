@@ -487,7 +487,15 @@ function App() {
     ? workspace.models.some((m) => m.supports_thinking)
     : !!chosenModel?.supports_thinking;
   const current = workspace.conversations.find((c) => c.id === cid),
-    currentFolder = workspace.groups.find((g) => g.id === folder);
+    currentFolder = workspace.groups.find((g) => g.id === folder),
+    sourceLabel = repository
+      ? (workspace.repositories.find((r) => String(r.id) === repository)
+          ?.name ?? "Unavailable knowledge base")
+      : personalFile
+        ? "Personal · " +
+          (workspace.personal_files.find((f) => f.id === personalFile)
+            ?.filename ?? "Unavailable file")
+        : "General chats";
   const editChat = (chat: Chat) => {
       setDialogError("");
       setEditor({ kind: "chat", chat });
@@ -621,9 +629,18 @@ function App() {
                       ? "Knowledge library"
                       : "Your profile"}
               </strong>
-              <span className="topbar-context">
+              <span
+                className="topbar-context"
+                title={
+                  view === "chat"
+                    ? sourceLabel +
+                      (currentFolder ? " / " + currentFolder.name : "")
+                    : undefined
+                }
+              >
                 {view === "chat"
-                  ? (currentFolder?.name ?? "Your private workspace")
+                  ? sourceLabel +
+                    (currentFolder ? " / " + currentFolder.name : "")
                   : `${platformName} enterprise workspace`}
               </span>
             </div>
@@ -813,30 +830,6 @@ function App() {
                     >
                       <Icon name="plus" />
                     </button>
-                    <select
-                      aria-label="Knowledge repository"
-                      value={repository}
-                      disabled={busy || !!cid}
-                      onChange={(e) => {
-                        setRepository(e.target.value);
-                        setPersonalFile(null);
-                        setFolder(null);
-                      }}
-                    >
-                      <option value="">
-                        {personalFile
-                          ? "Personal · " +
-                            (workspace.personal_files.find(
-                              (f) => f.id === personalFile,
-                            )?.filename ?? "Unavailable file")
-                          : "General chat"}
-                      </option>
-                      {workspace.repositories.map((r) => (
-                        <option key={r.id} value={r.id}>
-                          {r.name}
-                        </option>
-                      ))}
-                    </select>
                   </div>
                   <div className="composer-right">
                     <details className="model-details">

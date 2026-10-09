@@ -1,4 +1,18 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
+async function startKnowledgeChat(page: Page, name: string) {
+  const library = page.getByRole("button", {
+    name: "Knowledge library",
+    exact: true,
+  });
+  if ((await library.getAttribute("aria-expanded")) === "false")
+    await library.click();
+  const group = page.getByRole("button", { name, exact: true });
+  if ((await group.getAttribute("aria-expanded")) === "false")
+    await group.click();
+  await page
+    .getByRole("button", { name: "New chat in " + name, exact: true })
+    .click();
+}
 import { policyPDF, policyDOCX } from "./fixtures";
 test("admin sessions can end another browser session and all sessions including their own", async ({
   page,
@@ -269,16 +283,14 @@ test("React workspace: settings, real uploads, citations, folders, persisted cha
   });
   await page.getByRole("button", { name: "Upload and index" }).click();
   await expect(page.getByText("ready", { exact: true })).toHaveCount(2);
+  await startKnowledgeChat(page, "Policies");
   await page
-    .getByRole("button", { name: "Create folder", exact: true })
+    .getByRole("button", { name: "Create folder in Policies", exact: true })
     .click();
   await page.getByLabel("Folder name").fill("Finance");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.getByRole("button", { name: "New chat in folder" }).click();
-  await page
-    .getByLabel("Knowledge repository")
-    .selectOption({ label: "Policies" });
   await page
     .getByLabel("Message Raazi")
     .fill("Travel expenses manager approval");
@@ -338,6 +350,9 @@ test("mobile drawer and folder collapse persist across reload", async ({
     .getByRole("button", { name: "Continue as local administrator" })
     .click();
   await page.getByRole("button", { name: "Open sidebar" }).click();
+  const policies = page.getByRole("button", { name: "Policies", exact: true });
+  if ((await policies.getAttribute("aria-expanded")) === "false")
+    await policies.click();
   const folder = page.locator(".folder-toggle").filter({ hasText: "Finance" });
   await expect(folder).toBeVisible();
   await folder.click();
@@ -1004,7 +1019,7 @@ test("selected empty knowledge base gives an apology instead of a general answer
   });
   const { id } = await created.json();
   await page.reload();
-  await page.getByLabel("Knowledge repository").selectOption(String(id));
+  await startKnowledgeChat(page, "Empty Manuals");
   await expect(page.getByText(/Knowledge-only: answers/)).toBeVisible();
   await page
     .getByLabel("Message Raazi")
@@ -1079,9 +1094,8 @@ test("general chat is default and named knowledge returns normal cited answers",
   await page
     .getByRole("button", { name: "Continue as local administrator" })
     .click();
-  const selector = page.getByLabel("Knowledge repository");
-  await expect(selector).toHaveValue("");
-  await expect(selector.locator("option:checked")).toHaveText("General chat");
+  await expect(page.getByLabel("Knowledge repository")).toHaveCount(0);
+  await expect(page.locator(".topbar-context")).toHaveText("General chats");
   await page
     .getByLabel("Message Raazi")
     .fill("Travel expenses manager approval");
@@ -1089,7 +1103,7 @@ test("general chat is default and named knowledge returns normal cited answers",
   await expect(page.locator(".message.assistant")).toBeVisible();
   await expect(page.locator(".message.assistant .citation")).toHaveCount(0);
   await page.getByRole("button", { name: "New chat", exact: true }).click();
-  await selector.selectOption({ label: "Policies" });
+  await startKnowledgeChat(page, "Policies");
   await page
     .getByLabel("Message Raazi")
     .fill("Travel expenses manager approval");
@@ -1313,8 +1327,8 @@ test("sidebar disclosures keep knowledge chats and custom folders under their pa
   await section
     .getByRole("button", { name: "New chat in Sidebar Manuals", exact: true })
     .click();
-  await expect(page.getByLabel("Knowledge repository")).toHaveValue(
-    String(repository.id),
+  await expect(page.locator(".topbar-context")).toContainText(
+    "Sidebar Manuals",
   );
   await page.getByLabel("Message Raazi").fill("Sidebar knowledge question");
   await page.getByRole("button", { name: "Send message" }).click();
@@ -1343,8 +1357,8 @@ test("sidebar disclosures keep knowledge chats and custom folders under their pa
       .getByRole("button", { name: "Sidebar knowledge question", exact: true }),
   ).toBeVisible();
   await page.reload();
-  await expect(page.getByLabel("Knowledge repository")).toHaveValue(
-    String(repository.id),
+  await expect(page.locator(".topbar-context")).toContainText(
+    "Sidebar Manuals",
   );
   await section
     .getByRole("button", { name: "Sidebar Manuals", exact: true })
@@ -1369,7 +1383,7 @@ test("sidebar disclosures keep knowledge chats and custom folders under their pa
     has: page.getByRole("button", { name: "General chats", exact: true }),
   });
   await general.getByRole("button", { name: "New general chat" }).click();
-  await expect(page.getByLabel("Knowledge repository")).toHaveValue("");
+  await expect(page.locator(".topbar-context")).toHaveText("General chats");
 });
 
 test("Personal files, document hover details, drag moves, chat actions and empty-folder deletion", async ({
@@ -1519,9 +1533,9 @@ test("Personal files, document hover details, drag moves, chat actions and empty
     fileSection.locator(".folder-children .history-row"),
   ).toHaveCount(0);
   await page.reload();
-  await expect(
-    page.getByLabel("Knowledge repository").locator("option:checked"),
-  ).toContainText("Personal · personal-sidebar.txt");
+  await expect(page.locator(".topbar-context")).toContainText(
+    "Personal · personal-sidebar.txt",
+  );
   await expect(chatRow).toBeVisible();
   await chatRow.dragTo(folderRow);
   await expect(
@@ -1566,9 +1580,7 @@ test("Personal files, document hover details, drag moves, chat actions and empty
   await page
     .getByRole("button", { name: "Remove personal-sidebar.txt", exact: true })
     .click();
-  await expect(
-    page.getByLabel("Knowledge repository").locator("option:checked"),
-  ).toHaveText("General chat");
+  await expect(page.locator(".topbar-context")).toHaveText("General chats");
   await expect(page.locator(".composer .attachment-chip")).toHaveCount(0);
   await expect(page.getByLabel("Message Raazi")).toHaveValue(
     "Keep my question draft",
