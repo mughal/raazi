@@ -240,3 +240,7 @@ Composer source selection (9 October 2026): the General chat / knowledge-source 
 Composer source-selection verification: TypeScript/Vite build and all 22 Edge fixture workflows passed, including mobile folder disclosure, general/shared/Personal source selection, citations, reload and draft preservation. Changed files pass formatting and whitespace checks. Server behavior and live integration verification are unchanged.
 
 Login label (9 October 2026): Portal sign-in labels its username field Windows/Domain User Name. Authentication behavior is unchanged.
+
+## Proposed enterprise consistency skills
+
+See [ENTERPRISE_SKILLS.md](ENTERPRISE_SKILLS.md) for the proposed skill family. It covers common design, access, SIEM, storage, backup, release, and optional AI controls. The proposal does not change application behavior or verify live integrations.

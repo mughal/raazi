@@ -8,7 +8,7 @@ Read `docs/HANDOFF.md` and `docs/ARCHITECTURE.md` before substantive changes. Th
 - Keep the composer light, compact by default, and visible at the bottom. Messages scroll independently.
 - Preserve the local database, encryption key, signing secret, workspace namespace, and referenced objects. Code checkout alone does not transfer workspace data.
 - Never commit `.env`, `data/`, provider keys, or real credentials.
-- Use concise documentation with approximately 80% ASD-STE100 principles. Do not claim formal STE certification.
+- Use concise documentation with approximately 80% ASD-STE100 style. Relax wording where strict application would reduce technical accuracy or clarity. Do not claim formal STE certification.
 - Run relevant build/tests for each change. Browser tests use Microsoft Edge and isolated fixtures. Live PostgreSQL checks require a disposable `RAAZI_TEST_DATABASE_URL`.
 - Report live integrations separately from fixture verification. Real Jev, AD, Huawei S3, and production rollout still need target-environment checks.
 - Follow `docs/PRODUCTION.md` for deployment. The current architecture supports one app replica.

@@ -267,3 +267,9 @@ Composer source selection (9 October 2026): the General chat / knowledge-source 
 Composer source-selection verification: TypeScript/Vite build and all 22 Edge fixture workflows passed, including mobile folder disclosure, general/shared/Personal source selection, citations, reload and draft preservation. Changed files pass formatting and whitespace checks. Server behavior and live integration verification are unchanged.
 
 Login label (9 October 2026): Portal sign-in labels its username field Windows/Domain User Name. Authentication behavior is unchanged.
+
+## Enterprise skill design brief
+
+Added: 11 October 2026. [ENTERPRISE_SKILLS.md](ENTERPRISE_SKILLS.md) defines the proposed skill family and use across projects. It includes backup and restore, shared controls, and verification rules. Use approximately 80% ASD-STE100 style. Relax wording when needed for technical accuracy or clarity. No formal certification is claimed.
+
+The Markdown file is the maintained source. The local review PDF is `output/pdf/ENTERPRISE_SKILLS.pdf`. Git ignores the PDF and temporary generation files. No skills are installed and application behavior is unchanged.

@@ -14,3 +14,7 @@ test-results/
 deploy/*.pem
 deploy/*.key
 deploy/*.crt
+
+# Local review PDF and its generation files
+/output/pdf/ENTERPRISE_SKILLS.pdf
+/tmp/pdfs/enterprise-skills/
